@@ -991,7 +991,7 @@ export default function Dashboard(){
                   Carregando tarefas...
                 </div>
               ):(
-              <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:isMobile?"wrap":"nowrap"}}>
+              <><div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:isMobile?"wrap":"nowrap"}}>
                 <div style={{display:"flex",gap:3,background:"rgba(255,255,255,.04)",borderRadius:9,padding:3,border:`1px solid ${T.border}`}}>
                   {["all","todo","doing","done"].map(f=>{
                     const lm={all:"Todas",todo:"Pendente",doing:"Andamento",done:"Concluído"};
@@ -1083,7 +1083,7 @@ export default function Dashboard(){
                   );
                 })}
               </div>
-              )}
+              </>)}
             </div>
           )}
 
