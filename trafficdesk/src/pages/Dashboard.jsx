@@ -502,7 +502,8 @@ export default function Dashboard(){
   const[liveMetrics,setLiveMetrics]=useState(null);
   const[fetchingInsights,setFetchingInsights]=useState(false);
   const[dashPeriod,setDashPeriod]=useState("last_30d");
-  const[restoringConn,setRestoringConn]=useState(true); // shows loading while auto-restoring
+  const[restoringConn,setRestoringConn]=useState(true);
+  const[savedToken,setSavedToken]=useState(""); // persists token across form resets
 
   const periods=[
     {v:"today",l:"Hoje"},
@@ -575,6 +576,7 @@ export default function Dashboard(){
         for(const conn of data){
           if(conn.platform==="meta"&&conn.access_token&&conn.bm_id){
             setMetaForm(f=>({...f,accessToken:conn.access_token,bmId:conn.bm_id}));
+            setSavedToken(conn.access_token); // keep token available for period changes
             const cached=localStorage.getItem("td_meta_accounts");
             if(cached){
               const accs=JSON.parse(cached);
@@ -608,8 +610,9 @@ export default function Dashboard(){
 
   const changePeriod=async(p)=>{
     setDashPeriod(p);
-    if(metaStatus==="connected"&&metaAccounts.length>0){
-      await fetchInsights(metaAccounts,metaForm.accessToken,p);
+    const token=savedToken||metaForm.accessToken;
+    if(metaStatus==="connected"&&metaAccounts.length>0&&token){
+      await fetchInsights(metaAccounts,token,p);
     }
   };
 
@@ -644,6 +647,7 @@ export default function Dashboard(){
       setMetaAccounts(finalAccounts);
       setMetaStatus("connected");
       setMetaStep(2);
+      setSavedToken(metaForm.accessToken); // persist token for period changes
 
       // 💾 Persist to Supabase so session survives reload
       await saveConnection("meta",metaForm.accessToken,metaForm.bmId,finalAccounts);
@@ -659,6 +663,7 @@ export default function Dashboard(){
   const disconnectMeta=()=>{
     setMetaStatus("idle");setMetaAccounts([]);setMetaForm(initMeta);
     setMetaStep(0);setMetaError("");setLiveMetrics(null);
+    setSavedToken("");
     clearConnection("meta");
   };
 
@@ -792,7 +797,7 @@ export default function Dashboard(){
                   ))}
                 </div>
                 {metaStatus==="connected"&&(
-                  <button onClick={()=>fetchInsights(metaAccounts,metaForm.accessToken,dashPeriod)}
+                  <button onClick={()=>fetchInsights(metaAccounts,savedToken||metaForm.accessToken,dashPeriod)}
                     disabled={fetchingInsights}
                     style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.sub,cursor:fetchingInsights?"not-allowed":"pointer",fontSize:11,fontFamily:T.font,display:"flex",alignItems:"center",gap:6,opacity:fetchingInsights?.6:1}}>
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{animation:fetchingInsights?"spin .8s linear infinite":"none"}}><path d="M10 6A4 4 0 1 1 6 2a4 4 0 0 1 2.83 1.17L10 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M10 1v3H7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
