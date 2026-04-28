@@ -52,24 +52,10 @@ const T = {
   font:"'Sora',system-ui,sans-serif", mono:"'JetBrains Mono',monospace",
 };
 
-const clients=[
-  {id:1,name:"Empresa Alpha",short:"EA",platforms:["meta","google"],budget:15000,status:"active"},
-  {id:2,name:"Loja Beta",short:"LB",platforms:["meta"],budget:5000,status:"warning"},
-  {id:3,name:"Startup Gama",short:"SG",platforms:["google"],budget:8000,status:"paused"},
-  {id:4,name:"Marca Delta",short:"MD",platforms:["meta","google"],budget:20000,status:"active"},
-  {id:5,name:"Clínica Epsilon",short:"CE",platforms:["meta"],budget:3500,status:"active"},
-];
-const metaRows=[
-  {client:"Empresa Alpha",spend:0,ctr:0,cpc:0,conv:0,roas:0},
-  {client:"Loja Beta",spend:0,ctr:0,cpc:0,conv:0,roas:0},
-  {client:"Marca Delta",spend:0,ctr:0,cpc:0,conv:0,roas:0},
-  {client:"Clínica Epsilon",spend:0,ctr:0,cpc:0,conv:0,roas:0},
-];
-const googleRows=[
-  {client:"Empresa Alpha",spend:0,ctr:0,cpc:0,conv:0,roas:0},
-  {client:"Startup Gama",spend:0,ctr:0,cpc:0,conv:0,roas:0},
-  {client:"Marca Delta",spend:0,ctr:0,cpc:0,conv:0,roas:0},
-];
+// Clients, metaRows and googleRows are now built dynamically from connected accounts
+const clients=[];
+const metaRows=[];
+const googleRows=[];
 const spendTrend=[
   {w:"S1",meta:0,google:0},{w:"S2",meta:0,google:0},
   {w:"S3",meta:0,google:0},{w:"S4",meta:0,google:0},
@@ -288,22 +274,75 @@ export default function Dashboard(){
   const[showGoogleDev,setShowGoogleDev]=useState(false);
   const[metaStep,setMetaStep]=useState(0);
   const[googleStep,setGoogleStep]=useState(0);
-  const[connTab,setConnTab]=useState("connect"); // connect | docs
+  const[connTab,setConnTab]=useState("connect");
   const[metaError,setMetaError]=useState("");
+  const[liveMetrics,setLiveMetrics]=useState(null);
+  const[fetchingInsights,setFetchingInsights]=useState(false);
+
+  // Build dynamic clients from connected accounts
+  const dynClients=[
+    ...metaAccounts.map((a,i)=>({
+      id:`meta-${i}`,name:a.name,
+      short:a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),
+      platforms:["meta"],budget:0,status:a.status||"active",
+      accountId:a.id,spend:a.spend,
+    })),
+    ...googleAccounts.map((a,i)=>({
+      id:`google-${i}`,name:a.name,
+      short:a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),
+      platforms:["google"],budget:0,status:a.status||"active",
+      accountId:a.id,spend:a.spend,
+    })),
+  ];
+  const activeClients=dynClients.length>0?dynClients:clients;
 
   const GRAPH="https://graph.facebook.com/v19.0";
+
+  // Fetch real insights for all connected accounts
+  const fetchInsights=async(accounts,token,period="last_30d")=>{
+    setFetchingInsights(true);
+    try{
+      const results=await Promise.all(
+        accounts.map(async(acc)=>{
+          const res=await fetch(
+            `${GRAPH}/act_${acc.id}/insights`+
+            `?fields=impressions,reach,clicks,ctr,cpc,spend,actions,action_values,frequency`+
+            `&date_preset=${period}&level=account`+
+            `&access_token=${token}`
+          );
+          const data=await res.json();
+          if(data.error||!data.data?.[0])return null;
+          const d=data.data[0];
+          const conv=d.actions?.find(a=>a.action_type==="purchase"||a.action_type==="lead"||a.action_type==="complete_registration");
+          const convVal=d.action_values?.find(a=>a.action_type==="purchase"||a.action_type==="lead");
+          return{
+            client:acc.name,
+            accountId:acc.id,
+            impressoes:parseInt(d.impressions)||0,
+            alcance:parseInt(d.reach)||0,
+            ctr:parseFloat(d.ctr||0).toFixed(2),
+            cpc:parseFloat(d.cpc||0).toFixed(2),
+            investido:parseFloat(d.spend||0).toFixed(2),
+            conversoes:parseInt(conv?.value||0),
+            valorResult:parseFloat(convVal?.value||0).toFixed(2),
+          };
+        })
+      );
+      const valid=results.filter(Boolean);
+      if(valid.length>0)setLiveMetrics(valid);
+    }catch(e){console.error("Insights fetch error:",e);}
+    finally{setFetchingInsights(false);}
+  };
 
   const connectMeta=async()=>{
     if(!metaForm.accessToken||!metaForm.bmId)return;
     setMetaStatus("connecting");
     setMetaError("");
     try{
-      // 1) Validate token — get user info
       const meRes=await fetch(`${GRAPH}/me?fields=id,name&access_token=${metaForm.accessToken}`);
       const meData=await meRes.json();
       if(meData.error)throw new Error(meData.error.message);
 
-      // 2) Fetch ad accounts owned by the BM
       const accsRes=await fetch(
         `${GRAPH}/${metaForm.bmId}/owned_ad_accounts`+
         `?fields=id,name,account_status,currency,timezone_name,amount_spent`+
@@ -322,16 +361,20 @@ export default function Dashboard(){
           :"R$ 0,00",
       }));
 
-      setMetaAccounts(accounts.length>0?accounts:[{id:metaForm.bmId,name:`BM ${meData.name}`,status:"active",spend:"R$ 0,00"}]);
+      const finalAccounts=accounts.length>0?accounts:[{id:metaForm.bmId,name:`BM ${meData.name}`,status:"active",spend:"R$ 0,00"}];
+      setMetaAccounts(finalAccounts);
       setMetaStatus("connected");
       setMetaStep(2);
+
+      // Busca insights reais automaticamente após conectar
+      await fetchInsights(finalAccounts,metaForm.accessToken);
     }catch(err){
       setMetaStatus("error");
       setMetaError(err.message||"Erro ao conectar. Verifique o token e o BM ID.");
     }
   };
 
-  const disconnectMeta=()=>{setMetaStatus("idle");setMetaAccounts([]);setMetaForm(initMeta);setMetaStep(0);setMetaError("");};
+  const disconnectMeta=()=>{setMetaStatus("idle");setMetaAccounts([]);setMetaForm(initMeta);setMetaStep(0);setMetaError("");setLiveMetrics(null);};
 
   const connectGoogle=()=>{
     if(!googleForm.clientId||!googleForm.clientSecret||!googleForm.devToken)return;
@@ -340,12 +383,23 @@ export default function Dashboard(){
   };
   const disconnectGoogle=()=>{setGoogleStatus("idle");setGoogleAccounts([]);setGoogleForm(initGoogle);setGoogleStep(0);};
 
-  const totMeta=metaRows.reduce((s,d)=>s+d.spend,0);
+  // Use live Meta API data when connected, fallback to static zeros
+  const liveRows=liveMetrics||[];
+  const totMeta=liveRows.length>0
+    ?liveRows.reduce((s,d)=>s+parseFloat(d.investido),0)
+    :metaRows.reduce((s,d)=>s+d.spend,0);
   const totGoogle=googleRows.reduce((s,d)=>s+d.spend,0);
   const total=totMeta+totGoogle;
-  const avgMROAS=(metaRows.reduce((s,d)=>s+d.roas,0)/metaRows.length).toFixed(1);
+  const avgMROAS=liveRows.length>0
+    ?(()=>{const totalInv=liveRows.reduce((s,d)=>s+parseFloat(d.investido),0);const totalVal=liveRows.reduce((s,d)=>s+parseFloat(d.valorResult),0);return totalInv>0?(totalVal/totalInv).toFixed(1):"0.0";})()
+    :(metaRows.reduce((s,d)=>s+d.roas,0)/metaRows.length).toFixed(1);
   const avgGROAS=(googleRows.reduce((s,d)=>s+d.roas,0)/googleRows.length).toFixed(1);
   const crit=alerts.filter(a=>a.sev==="high").length;
+
+  // Live dashboard rows for Meta
+  const activeMeta=liveRows.length>0
+    ?liveRows.map(d=>({client:d.client,spend:parseFloat(d.investido),ctr:parseFloat(d.ctr),cpc:parseFloat(d.cpc),conv:d.conversoes,roas:d.investido>0?(parseFloat(d.valorResult)/parseFloat(d.investido)).toFixed(1):0}))
+    :metaRows;
 
   const addTask=()=>{
     if(!nt.title||!nt.client)return;
@@ -383,7 +437,7 @@ export default function Dashboard(){
           </nav>
           <div style={{margin:"0 8px 14px",background:"rgba(255,255,255,.03)",borderRadius:11,border:`1px solid ${T.border}`,padding:"14px 16px"}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {[{l:"Clientes",v:5,c:T.ok},{l:"Alertas",v:alerts.length,c:crit>0?T.err:T.warn}].map(x=>(<div key={x.l}><div style={{fontSize:10,color:T.mute,marginBottom:4,fontWeight:500}}>{x.l}</div><div style={{fontFamily:T.mono,fontSize:22,fontWeight:500,color:x.c}}>{x.v}</div></div>))}
+              {[{l:"Clientes",v:activeClients.length,c:T.ok},{l:"Alertas",v:alerts.length,c:crit>0?T.err:T.warn}].map(x=>(<div key={x.l}><div style={{fontSize:10,color:T.mute,marginBottom:4,fontWeight:500}}>{x.l}</div><div style={{fontFamily:T.mono,fontSize:22,fontWeight:500,color:x.c}}>{x.v}</div></div>))}
             </div>
           </div>
           {/* User info + Logout */}
@@ -435,7 +489,10 @@ export default function Dashboard(){
 
               <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 360px",gap:12,marginBottom:12}}>
                 <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                  {[{label:"Meta Ads",color:T.meta,rows:metaRows,tot:totMeta,lowCTR:1.2},{label:"Google Ads",color:T.google,rows:googleRows,tot:totGoogle,lowCTR:2}].map(pl=>(
+                  {/* Live banner */}
+                  {fetchingInsights&&<div style={{background:"rgba(99,102,241,.08)",border:`1px solid rgba(99,102,241,.2)`,borderRadius:10,padding:"10px 16px",fontSize:12,color:T.accent,display:"flex",alignItems:"center",gap:8,marginBottom:10}}><span style={{width:12,height:12,border:"2px solid rgba(99,102,241,.3)",borderTop:`2px solid ${T.accent}`,borderRadius:"50%",animation:"spin .7s linear infinite",display:"inline-block",flexShrink:0}}></span>Buscando dados reais da Meta API...</div>}
+                  {liveMetrics&&!fetchingInsights&&<div style={{background:"rgba(34,197,94,.07)",border:"1px solid rgba(34,197,94,.2)",borderRadius:10,padding:"8px 14px",fontSize:11,color:T.ok,display:"flex",alignItems:"center",gap:6,marginBottom:10}}>✅ Dados reais da Meta API — {liveMetrics.length} conta(s) sincronizada(s)</div>}
+                  {[{label:"Meta Ads",color:T.meta,rows:activeMeta,tot:totMeta,lowCTR:1.2},{label:"Google Ads",color:T.google,rows:googleRows,tot:totGoogle,lowCTR:2}].map(pl=>(
                     <div key={pl.label} className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 22px"}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
                         <span style={{width:8,height:8,borderRadius:"50%",background:pl.color,display:"inline-block"}}></span>
@@ -516,12 +573,23 @@ export default function Dashboard(){
 
           {/* ═══════ CLIENTS ═══════ */}
           {view==="clients"&&(
-            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(288px,1fr))",gap:12}}>
-              {clients.map(c=>{
-                const cm=metaRows.find(d=>d.client===c.name);
-                const cg=googleRows.find(d=>d.client===c.name);
-                const tot=(cm?.spend||0)+(cg?.spend||0);
-                const pct=Math.min(Math.round((tot/c.budget)*100),100);
+            <div>
+              {activeClients.length===0?(
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 20px",textAlign:"center"}}>
+                  <div style={{width:60,height:60,borderRadius:16,background:"rgba(99,102,241,.1)",border:`1px solid rgba(99,102,241,.2)`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:16,fontSize:28}}>🔌</div>
+                  <div style={{fontSize:16,fontWeight:600,color:T.txt,marginBottom:8}}>Nenhuma conta conectada</div>
+                  <div style={{fontSize:13,color:T.mute,maxWidth:320,lineHeight:1.7,marginBottom:20}}>Conecte seu Business Manager ou Google Ads para ver suas contas aqui automaticamente.</div>
+                  <button onClick={()=>setView("connections")} className="btn-p" style={{padding:"10px 22px",borderRadius:10,border:"none",background:T.accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:T.font}}>
+                    Ir para Conexões →
+                  </button>
+                </div>
+              ):(
+              <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(288px,1fr))",gap:12}}>
+              {activeClients.map(c=>{
+                const lm=liveMetrics?.find(d=>d.accountId===c.accountId);
+                const tot=lm?parseFloat(lm.investido):0;
+                const budget=c.budget||0;
+                const pct=budget>0?Math.min(Math.round((tot/budget)*100),100):0;
                 const bc=pct>90?T.err:pct>70?T.warn:T.ok;
                 return(
                   <div key={c.id} className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"20px 22px"}}>
@@ -537,9 +605,12 @@ export default function Dashboard(){
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
                       {[
-                        {l:"Gasto",v:fR(tot)},{l:"Orçamento",v:fR(c.budget)},
-                        ...(cm?[{l:"ROAS Meta",v:cm.roas+"x"},{l:"CTR Meta",v:cm.ctr+"%"}]:[]),
-                        ...(cg?[{l:"ROAS Google",v:cg.roas+"x"},{l:"CTR Google",v:cg.ctr+"%"}]:[]),
+                        {l:"Gasto",v:lm?`R$ ${parseFloat(lm.investido).toLocaleString("pt-BR",{minimumFractionDigits:2})}`:"R$ 0,00"},
+                        {l:"Impressões",v:lm?parseInt(lm.impressoes).toLocaleString("pt-BR"):"0"},
+                        {l:"CTR",v:lm?lm.ctr+"%":"0%"},
+                        {l:"CPC",v:lm?`R$ ${lm.cpc}`:"R$ 0,00"},
+                        {l:"Conversões",v:lm?lm.conversoes:"0"},
+                        {l:"ROAS",v:lm&&parseFloat(lm.investido)>0?(parseFloat(lm.valorResult)/parseFloat(lm.investido)).toFixed(2)+"x":"0x"},
                       ].map((m,i)=>(
                         <div key={i} style={{background:"rgba(255,255,255,.03)",borderRadius:8,border:`1px solid ${T.border}`,padding:"10px 12px"}}>
                           <div style={{fontSize:9,color:T.mute,marginBottom:4,fontWeight:500,letterSpacing:".07em",textTransform:"uppercase"}}>{m.l}</div>
@@ -547,18 +618,18 @@ export default function Dashboard(){
                         </div>
                       ))}
                     </div>
+                    {!lm&&metaStatus==="connected"&&<div style={{fontSize:11,color:T.warn,marginBottom:10}}>⏳ Aguardando dados da API...</div>}
                     <div>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                        <span style={{fontSize:10,color:T.mute}}>Uso do orçamento</span>
-                        <span style={{fontSize:10,fontFamily:T.mono,color:bc}}>{pct}%</span>
-                      </div>
-                      <div style={{background:"rgba(255,255,255,.07)",borderRadius:100,height:4,overflow:"hidden"}}>
-                        <div style={{background:bc,width:`${pct}%`,height:"100%",borderRadius:100}}></div>
+                        <span style={{fontSize:10,color:T.mute}}>ID da conta</span>
+                        <span style={{fontSize:10,fontFamily:T.mono,color:T.mute}}>{c.accountId||"–"}</span>
                       </div>
                     </div>
                   </div>
                 );
               })}
+              </div>
+              )}
             </div>
           )}
 
@@ -595,7 +666,7 @@ export default function Dashboard(){
                       <select value={nt.client} onChange={e=>setNt({...nt,client:e.target.value})}
                         style={{width:"100%",background:"rgba(255,255,255,.04)",border:`1px solid ${T.borderMid}`,borderRadius:8,padding:"9px 12px",color:nt.client?T.txt:T.mute,fontSize:12,fontFamily:T.font}}>
                         <option value="">Selecionar...</option>
-                        {clients.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                        {activeClients.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
                       </select>
                     </div>
                     <div style={{flex:1,minWidth:110}}>
@@ -757,7 +828,7 @@ export default function Dashboard(){
             const roas=m.investido>0?(m.valorResult/m.investido).toFixed(2):0;
             const cpl=m.conversoes>0?(m.investido/m.conversoes).toFixed(2):0;
             const trend=trendData[repClient]||trendData["all"];
-            const clientObj=clients.find(c=>c.name===repClient);
+            const clientObj=activeClients.find(c=>c.name===repClient);
             const hasMeta=repClient==="all"||allData[repClient]?.meta;
             const hasGoogle=repClient==="all"||allData[repClient]?.google;
 
@@ -804,7 +875,7 @@ export default function Dashboard(){
                   <div style={{flex:2,minWidth:180}}>
                     <div style={{fontSize:9,color:T.mute,letterSpacing:".09em",fontWeight:500,marginBottom:5}}>CONTA / CLIENTE</div>
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      {[{v:"all",l:"Todos"}, ...clients.map(c=>({v:c.name,l:c.name.split(" ").slice(0,2).join(" ")}))].map(opt=>(
+                      {[{v:"all",l:"Todos"}, ...activeClients.map(c=>({v:c.name,l:c.name.split(" ").slice(0,2).join(" ")}))].map(opt=>(
                         <button key={opt.v} onClick={()=>setRepClient(opt.v)} style={{
                           padding:"6px 12px",borderRadius:8,border:`1px solid ${repClient===opt.v?T.accent+"88":T.border}`,
                           background:repClient===opt.v?"rgba(99,102,241,.12)":"transparent",
@@ -1155,7 +1226,7 @@ export default function Dashboard(){
                             <select value={newCamp.client} onChange={e=>setNewCamp({...newCamp,client:e.target.value})}
                               style={{width:"100%",background:"rgba(255,255,255,.04)",border:`1px solid ${T.borderMid}`,borderRadius:8,padding:"9px 12px",color:newCamp.client?T.txt:T.mute,fontSize:12,fontFamily:T.font}}>
                               <option value="">Selecionar cliente...</option>
-                              {clients.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                              {activeClients.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
                             </select>
                           </div>
                         </div>
