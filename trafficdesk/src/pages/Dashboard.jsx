@@ -402,6 +402,9 @@ export default function Dashboard(){
   const[repClient,setRepClient]=useState("all");
   const[repPlatform,setRepPlatform]=useState("all");
   const[repPeriod,setRepPeriod]=useState("30d");
+  const[repLoading,setRepLoading]=useState(false);
+  const[repData,setRepData]=useState(null);
+  const[repError,setRepError]=useState("");
 
   const copyText=(t)=>{navigator.clipboard.writeText(t).catch(()=>{});setCopied(true);setTimeout(()=>setCopied(false),1800);};
 
@@ -1122,10 +1125,6 @@ export default function Dashboard(){
             };
 
             // ── Fetch report insights for selected period ──
-            const[repLoading,setRepLoading]=useState(false);
-            const[repData,setRepData]=useState(null);
-            const[repError,setRepError]=useState("");
-
             const repPeriodMap={"7d":"last_7d","30d":"last_30d","90d":"last_90d"};
 
             const fetchRepData=async()=>{
