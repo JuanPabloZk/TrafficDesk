@@ -205,6 +205,55 @@ export default function Dashboard(){
   // Metrics cache
   const[metricsCache,setMetricsCache]=useState({});
 
+  // ── Helper: time ago ──────────────────────────────────────
+  const timeAgo=(ts)=>{
+    const d=Math.floor((new Date()-new Date(ts))/60000);
+    if(d<60)return d+"min";
+    if(d<1440)return Math.floor(d/60)+"h";
+    return Math.floor(d/1440)+"d";
+  };
+
+  const fetchInsights=async(accounts,token,period="last_30d")=>{
+    setFetchingInsights(true);
+    try{
+      const results=await Promise.all(
+        accounts.map(async(acc)=>{
+          const res=await fetch(
+            `${GRAPH}/act_${acc.id}/insights`+
+            `?fields=impressions,reach,clicks,ctr,cpc,spend,actions,action_values,frequency`+
+            `&date_preset=${period}&level=account`+
+            `&access_token=${token}`
+          );
+          const data=await res.json();
+          if(data.error||!data.data?.[0])return null;
+          const d=data.data[0];
+          const conv=d.actions?.find(a=>a.action_type==="purchase"||a.action_type==="lead"||a.action_type==="complete_registration");
+          const convVal=d.action_values?.find(a=>a.action_type==="purchase"||a.action_type==="lead");
+          return{
+            client:acc.name,
+            accountId:acc.id,
+            impressoes:parseInt(d.impressions)||0,
+            alcance:parseInt(d.reach)||0,
+            ctr:parseFloat(d.ctr||0).toFixed(2),
+            cpc:parseFloat(d.cpc||0).toFixed(2),
+            investido:parseFloat(d.spend||0).toFixed(2),
+            conversoes:parseInt(conv?.value||0),
+            valorResult:parseFloat(convVal?.value||0).toFixed(2),
+          };
+        })
+      );
+      const valid=results.filter(Boolean);
+      if(valid.length>0){
+        setLiveMetrics(valid);
+        // Cache metrics in Supabase for next session
+        await cacheMetrics(valid,period);
+        // Generate alerts based on real metrics
+        await generateAlerts(valid);
+      }
+    }catch(e){console.error("Insights fetch error:",e);}
+    finally{setFetchingInsights(false);}
+  };
+
   // ── Load ALL persisted data on mount ──────────────────────
   useEffect(()=>{
     if(!user?.id)return;
@@ -275,13 +324,6 @@ export default function Dashboard(){
     supabase.from("user_preferences").upsert({user_id:user.id,rep_period:repPeriod,updated_at:new Date().toISOString()},{onConflict:"user_id"});
   },[repPeriod,user?.id,prefsLoaded]);
 
-  // ── Helper: time ago ──────────────────────────────────────
-  const timeAgo=(ts)=>{
-    const d=Math.floor((new Date()-new Date(ts))/60000);
-    if(d<60)return d+"min";
-    if(d<1440)return Math.floor(d/60)+"h";
-    return Math.floor(d/1440)+"d";
-  };
 
   // ── Generate alerts from live metrics ─────────────────────
   const generateAlerts=async(metrics)=>{
@@ -563,46 +605,6 @@ export default function Dashboard(){
   },[user?.id]);
 
   // Fetch real insights for all connected accounts
-  const fetchInsights=async(accounts,token,period="last_30d")=>{
-    setFetchingInsights(true);
-    try{
-      const results=await Promise.all(
-        accounts.map(async(acc)=>{
-          const res=await fetch(
-            `${GRAPH}/act_${acc.id}/insights`+
-            `?fields=impressions,reach,clicks,ctr,cpc,spend,actions,action_values,frequency`+
-            `&date_preset=${period}&level=account`+
-            `&access_token=${token}`
-          );
-          const data=await res.json();
-          if(data.error||!data.data?.[0])return null;
-          const d=data.data[0];
-          const conv=d.actions?.find(a=>a.action_type==="purchase"||a.action_type==="lead"||a.action_type==="complete_registration");
-          const convVal=d.action_values?.find(a=>a.action_type==="purchase"||a.action_type==="lead");
-          return{
-            client:acc.name,
-            accountId:acc.id,
-            impressoes:parseInt(d.impressions)||0,
-            alcance:parseInt(d.reach)||0,
-            ctr:parseFloat(d.ctr||0).toFixed(2),
-            cpc:parseFloat(d.cpc||0).toFixed(2),
-            investido:parseFloat(d.spend||0).toFixed(2),
-            conversoes:parseInt(conv?.value||0),
-            valorResult:parseFloat(convVal?.value||0).toFixed(2),
-          };
-        })
-      );
-      const valid=results.filter(Boolean);
-      if(valid.length>0){
-        setLiveMetrics(valid);
-        // Cache metrics in Supabase for next session
-        await cacheMetrics(valid,period);
-        // Generate alerts based on real metrics
-        await generateAlerts(valid);
-      }
-    }catch(e){console.error("Insights fetch error:",e);}
-    finally{setFetchingInsights(false);}
-  };
 
   const changePeriod=async(p)=>{
     setDashPeriod(p);
