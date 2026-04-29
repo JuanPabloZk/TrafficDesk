@@ -260,9 +260,58 @@ export default function Dashboard(){
         const data=await res.json();
         if(data.error||!data.data?.[0])return null;
         const d=data.data[0];
-        const conv=d.actions?.find(a=>["purchase","lead","complete_registration"].includes(a.action_type));
-        const convVal=d.action_values?.find(a=>["purchase","lead"].includes(a.action_type));
-        return{client:acc.name,accountId:acc.id,impressoes:parseInt(d.impressions)||0,alcance:parseInt(d.reach)||0,ctr:parseFloat(d.ctr||0).toFixed(2),cpc:parseFloat(d.cpc||0).toFixed(2),investido:parseFloat(d.spend||0).toFixed(2),conversoes:parseInt(conv?.value||0),valorResult:parseFloat(convVal?.value||0).toFixed(2)};
+
+        // ── EXPANDED conversion detection ──
+        // Result = sum of ALL relevant conversion-like actions
+        // (Meta returns "Resultados" as the campaign optimization goal)
+        const conversionTypes=[
+          "purchase","omni_purchase","offsite_conversion.fb_pixel_purchase",
+          "lead","omni_lead","offsite_conversion.fb_pixel_lead","onsite_conversion.lead_grouped",
+          "complete_registration","omni_complete_registration",
+          "messaging_conversation_started_7d","onsite_conversion.messaging_conversation_started_7d",
+          "messaging_first_reply",
+          "onsite_conversion.purchase",
+          "onsite_conversion.flow_complete",
+          "submit_application","schedule",
+        ];
+        const valueTypes=[
+          "purchase","omni_purchase","offsite_conversion.fb_pixel_purchase",
+          "lead","omni_lead","offsite_conversion.fb_pixel_lead",
+          "onsite_conversion.purchase",
+        ];
+
+        // Build a breakdown of all conversion types found
+        const breakdown=(d.actions||[]).filter(a=>conversionTypes.includes(a.action_type)).map(a=>({type:a.action_type,value:parseInt(a.value)||0}));
+
+        // Total conversions = sum of all conversion-like actions (priority: campaign objective)
+        // Use first match priority order, else sum all
+        let totalConv=0;
+        const primaryOrder=["purchase","omni_purchase","offsite_conversion.fb_pixel_purchase","lead","omni_lead","offsite_conversion.fb_pixel_lead","messaging_conversation_started_7d","onsite_conversion.messaging_conversation_started_7d","complete_registration"];
+        for(const t of primaryOrder){
+          const found=d.actions?.find(a=>a.action_type===t);
+          if(found){totalConv=parseInt(found.value)||0;break;}
+        }
+        // If no priority match, sum all conversion-like actions
+        if(totalConv===0){
+          totalConv=(d.actions||[]).filter(a=>conversionTypes.includes(a.action_type)).reduce((s,a)=>s+(parseInt(a.value)||0),0);
+        }
+
+        // Conversion value
+        const convVal=(d.action_values||[]).find(a=>valueTypes.includes(a.action_type));
+
+        return{
+          client:acc.name,accountId:acc.id,
+          impressoes:parseInt(d.impressions)||0,
+          alcance:parseInt(d.reach)||0,
+          cliques:parseInt(d.clicks)||0,
+          ctr:parseFloat(d.ctr||0).toFixed(2),
+          cpc:parseFloat(d.cpc||0).toFixed(2),
+          investido:parseFloat(d.spend||0).toFixed(2),
+          conversoes:totalConv,
+          valorResult:parseFloat(convVal?.value||0).toFixed(2),
+          breakdown,
+          allActions:d.actions||[],
+        };
       }));
       const valid=results.filter(Boolean);
       if(valid.length>0){
@@ -1026,7 +1075,12 @@ export default function Dashboard(){
 
           {/* ═══════ REPORTS ═══════ */}
           {view==="reports"&&(()=>{
-            const repPeriodMap={"7d":"last_7d","30d":"last_30d","90d":"last_90d"};
+            const repPeriodMap={"7d":"last_7d","14d":"last_14d","30d":"last_30d","90d":"last_90d","this_month":"this_month","last_month":"last_month"};
+            const periodLabels={"7d":"Últimos 7 dias","14d":"Últimos 14 dias","30d":"Últimos 30 dias","90d":"Últimos 90 dias","this_month":"Este mês","last_month":"Mês passado"};
+
+            const conversionTypes=["purchase","omni_purchase","offsite_conversion.fb_pixel_purchase","lead","omni_lead","offsite_conversion.fb_pixel_lead","onsite_conversion.lead_grouped","complete_registration","omni_complete_registration","messaging_conversation_started_7d","onsite_conversion.messaging_conversation_started_7d","messaging_first_reply","onsite_conversion.purchase","onsite_conversion.flow_complete","submit_application","schedule"];
+            const valueTypes=["purchase","omni_purchase","offsite_conversion.fb_pixel_purchase","lead","omni_lead","offsite_conversion.fb_pixel_lead","onsite_conversion.purchase"];
+            const actionLabels={"purchase":"Compras","omni_purchase":"Compras (Omni)","offsite_conversion.fb_pixel_purchase":"Compras (Pixel)","lead":"Leads","omni_lead":"Leads (Omni)","offsite_conversion.fb_pixel_lead":"Leads (Pixel)","onsite_conversion.lead_grouped":"Leads agrupados","complete_registration":"Cadastros","omni_complete_registration":"Cadastros (Omni)","messaging_conversation_started_7d":"Conversas iniciadas (7d)","onsite_conversion.messaging_conversation_started_7d":"Conversas Messenger","messaging_first_reply":"Primeira resposta","onsite_conversion.purchase":"Compras (onsite)","onsite_conversion.flow_complete":"Fluxos completos","submit_application":"Aplicações","schedule":"Agendamentos","landing_page_view":"Visitas LP","add_to_cart":"Add ao carrinho","initiate_checkout":"Checkout iniciado","video_view":"Vídeos vistos","page_engagement":"Engajamento","post_engagement":"Posts engajados","like":"Curtidas","comment":"Comentários","link_click":"Cliques no link"};
 
             const fetchRepData=async()=>{
               if(metaStatus!=="connected"||metaAccounts.length===0){setRepError("Conecte o Business Manager na aba Conexões para ver os dados reais.");return;}
@@ -1039,9 +1093,36 @@ export default function Dashboard(){
                   const data=await res.json();
                   if(data.error||!data.data?.[0])return null;
                   const d=data.data[0];
-                  const conv=d.actions?.find(a=>["purchase","lead","complete_registration"].includes(a.action_type));
-                  const convVal=d.action_values?.find(a=>["purchase","lead"].includes(a.action_type));
-                  return{client:acc.name,accountId:acc.id,impressoes:parseInt(d.impressions)||0,alcance:parseInt(d.reach)||0,cliques:parseInt(d.clicks)||0,ctr:parseFloat(d.ctr||0).toFixed(2),cpc:parseFloat(d.cpc||0).toFixed(2),investido:parseFloat(d.spend||0).toFixed(2),conversoes:parseInt(conv?.value||0),valorResult:parseFloat(convVal?.value||0).toFixed(2)};
+
+                  // Get all conversion-type actions
+                  const allConvs=(d.actions||[]).filter(a=>conversionTypes.includes(a.action_type));
+                  // Primary result (first match in priority order)
+                  const primaryOrder=["purchase","omni_purchase","offsite_conversion.fb_pixel_purchase","lead","omni_lead","offsite_conversion.fb_pixel_lead","messaging_conversation_started_7d","onsite_conversion.messaging_conversation_started_7d","complete_registration"];
+                  let totalConv=0;
+                  let primaryType=null;
+                  for(const t of primaryOrder){
+                    const f=d.actions?.find(a=>a.action_type===t);
+                    if(f){totalConv=parseInt(f.value)||0;primaryType=t;break;}
+                  }
+                  if(totalConv===0&&allConvs.length>0){
+                    totalConv=allConvs.reduce((s,a)=>s+(parseInt(a.value)||0),0);
+                    primaryType=allConvs[0]?.action_type;
+                  }
+                  const convVal=(d.action_values||[]).find(a=>valueTypes.includes(a.action_type));
+
+                  return{
+                    client:acc.name,accountId:acc.id,
+                    impressoes:parseInt(d.impressions)||0,
+                    alcance:parseInt(d.reach)||0,
+                    cliques:parseInt(d.clicks)||0,
+                    ctr:parseFloat(d.ctr||0).toFixed(2),
+                    cpc:parseFloat(d.cpc||0).toFixed(2),
+                    investido:parseFloat(d.spend||0).toFixed(2),
+                    conversoes:totalConv,
+                    valorResult:parseFloat(convVal?.value||0).toFixed(2),
+                    primaryType,
+                    breakdown:allConvs.map(a=>({type:a.action_type,label:actionLabels[a.action_type]||a.action_type,value:parseInt(a.value)||0})),
+                  };
                 }));
                 const valid=results.filter(Boolean);
                 setRepData(valid);
@@ -1055,114 +1136,186 @@ export default function Dashboard(){
             const roas=agg&&agg.investido>0?(agg.valorResult/agg.investido).toFixed(2):"0.00";
             const cpl=agg&&agg.conversoes>0?(agg.investido/agg.conversoes).toFixed(2):"0.00";
 
+            // Aggregate breakdown across all accounts
+            const aggBreakdown={};
+            (rd||[]).forEach(d=>{
+              (d.breakdown||[]).forEach(b=>{
+                if(!aggBreakdown[b.type]){aggBreakdown[b.type]={type:b.type,label:b.label,value:0};}
+                aggBreakdown[b.type].value+=b.value;
+              });
+            });
+            const breakdownList=Object.values(aggBreakdown).sort((a,b)=>b.value-a.value);
+
             const exportCSV=()=>{
               if(!agg)return;
-              const rows=[["Métrica","Valor"],["Período",repPeriod==="7d"?"7 dias":repPeriod==="30d"?"30 dias":"90 dias"],["Impressões",agg.impressoes.toLocaleString("pt-BR")],["Alcance",agg.alcance.toLocaleString("pt-BR")],["CTR",agg.ctr+"%"],["CPC","R$"+agg.cpc],["Valor Investido","R$"+agg.investido.toFixed(2)],["Conversões",agg.conversoes],["Resultado","R$"+agg.valorResult.toFixed(2)],["ROAS",roas+"x"],["CPL","R$"+cpl],[],...(rd||[]).map(d=>[d.client,d.impressoes,d.alcance,d.ctr+"%","R$"+d.cpc,"R$"+d.investido,d.conversoes,"R$"+d.valorResult])];
+              const rows=[["Métrica","Valor"],["Período",periodLabels[repPeriod]||repPeriod],["Conta",repClient==="all"?"Todas":repClient],["Impressões",agg.impressoes.toLocaleString("pt-BR")],["Alcance",agg.alcance.toLocaleString("pt-BR")],["Cliques",agg.cliques.toLocaleString("pt-BR")],["CTR",agg.ctr+"%"],["CPC","R$"+agg.cpc],["Valor Investido","R$"+agg.investido.toFixed(2)],["Resultados",agg.conversoes],["Valor do Resultado","R$"+agg.valorResult.toFixed(2)],["ROAS",roas+"x"],["CPA","R$"+cpl],[],["DETALHAMENTO POR TIPO"],...breakdownList.map(b=>[b.label,b.value]),[],["DETALHAMENTO POR CONTA"],["Conta","Impressões","Alcance","CTR","CPC","Investido","Resultados","Valor"],...(rd||[]).map(d=>[d.client,d.impressoes,d.alcance,d.ctr+"%","R$"+d.cpc,"R$"+d.investido,d.conversoes,"R$"+d.valorResult])];
               const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+rows.map(r=>r.join(",")).join("\n")],{type:"text/csv;charset=utf-8;"}));a.download=`relatorio_${repPeriod}.csv`;a.click();
             };
 
-            const MBox=({label,value,sub,accent})=>(
-              <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:isMobile?"14px 16px":"16px 20px",position:"relative",overflow:"hidden"}}>
-                <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:accent}}></div>
-                <div style={{fontSize:10,color:T.mute,letterSpacing:".09em",textTransform:"uppercase",fontWeight:500,marginBottom:7}}>{label}</div>
-                <div style={{fontFamily:T.mono,fontSize:isMobile?18:24,color:T.txt,fontWeight:500,marginBottom:4}}>{value}</div>
-                {sub&&<div style={{fontSize:11,color:T.mute}}>{sub}</div>}
-              </div>
-            );
-
             return(
               <div>
-                <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"14px 18px",marginBottom:16,display:"flex",gap:10,alignItems:isMobile?"flex-start":"center",flexWrap:"wrap",flexDirection:isMobile?"column":"row"}}>
-                  <div style={{flex:1,minWidth:160}}>
-                    <div style={{fontSize:9,color:T.mute,letterSpacing:".08em",marginBottom:5}}>CONTA</div>
-                    <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                      {[{v:"all",l:"Todas"},...metaAccounts.map(a=>({v:a.name,l:a.name.split(" ").slice(0,2).join(" ")}))].map(opt=>(
-                        <button key={opt.v} onClick={()=>setRepClient(opt.v)} style={{padding:"5px 10px",borderRadius:7,border:`1px solid ${repClient===opt.v?T.meta+"88":T.border}`,background:repClient===opt.v?"rgba(0,129,251,.1)":"transparent",color:repClient===opt.v?T.meta:T.sub,fontSize:11,fontFamily:T.font,cursor:"pointer"}}>{opt.l}</button>
-                      ))}
-                      {metaAccounts.length===0&&<span style={{fontSize:11,color:T.mute}}>Conecte o BM para ver contas</span>}
+                {/* ── HERO HEADER: account + period in one clean bar ── */}
+                <div className="card" style={{background:`linear-gradient(135deg, rgba(0,129,251,.06), rgba(99,102,241,.04))`,borderRadius:14,border:`1px solid ${T.borderMid}`,padding:isMobile?"16px":"18px 22px",marginBottom:14}}>
+                  <div style={{display:"flex",gap:12,alignItems:isMobile?"stretch":"flex-end",flexDirection:isMobile?"column":"row"}}>
+                    {/* Account select */}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:9,color:T.mute,letterSpacing:".1em",marginBottom:6,fontWeight:600}}>CONTA DE ANÚNCIO</div>
+                      <select value={repClient} onChange={e=>setRepClient(e.target.value)} style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${T.borderMid}`,borderRadius:9,padding:"10px 14px",color:T.txt,fontSize:13,fontFamily:T.font,cursor:"pointer"}}>
+                        <option value="all" style={{background:T.card}}>📊 Todas as contas ({metaAccounts.length})</option>
+                        {metaAccounts.map(a=>(<option key={a.id} value={a.name} style={{background:T.card}}>{a.name}</option>))}
+                      </select>
+                    </div>
+                    {/* Period select */}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:9,color:T.mute,letterSpacing:".1em",marginBottom:6,fontWeight:600}}>PERÍODO</div>
+                      <select value={repPeriod} onChange={e=>setRepPeriod(e.target.value)} style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${T.borderMid}`,borderRadius:9,padding:"10px 14px",color:T.txt,fontSize:13,fontFamily:T.font,cursor:"pointer"}}>
+                        <option value="7d" style={{background:T.card}}>📅 Últimos 7 dias</option>
+                        <option value="14d" style={{background:T.card}}>📅 Últimos 14 dias</option>
+                        <option value="30d" style={{background:T.card}}>📅 Últimos 30 dias</option>
+                        <option value="90d" style={{background:T.card}}>📅 Últimos 90 dias</option>
+                        <option value="this_month" style={{background:T.card}}>📅 Este mês</option>
+                        <option value="last_month" style={{background:T.card}}>📅 Mês passado</option>
+                      </select>
+                    </div>
+                    {/* Action buttons */}
+                    <div style={{display:"flex",gap:8,flexShrink:0}}>
+                      <button className="btn-p" onClick={fetchRepData} disabled={repLoading||metaStatus!=="connected"} style={{padding:"10px 18px",borderRadius:9,border:"none",background:metaStatus==="connected"?T.meta:"rgba(0,129,251,.3)",color:"#fff",cursor:metaStatus==="connected"&&!repLoading?"pointer":"not-allowed",fontSize:12,fontWeight:600,fontFamily:T.font,display:"flex",alignItems:"center",gap:7,whiteSpace:"nowrap",opacity:repLoading?.7:1}}>
+                        {repLoading?<><span style={{width:12,height:12,border:"2px solid rgba(255,255,255,.3)",borderTop:"2px solid #fff",borderRadius:"50%",animation:"spin .7s linear infinite",display:"inline-block"}}></span>Buscando...</>:<><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M11.5 7A4.5 4.5 0 1 1 7 2.5a4.5 4.5 0 0 1 3.18 1.32L11.5 5" stroke="white" strokeWidth="1.4" strokeLinecap="round"/><path d="M11.5 1.5v3.5h-3.5" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>Gerar relatório</>}
+                      </button>
+                      {agg&&<button onClick={exportCSV} title="Exportar CSV" style={{padding:"10px 14px",borderRadius:9,border:`1px solid ${T.borderMid}`,background:"rgba(255,255,255,.04)",color:T.txt,cursor:"pointer",fontSize:12,fontFamily:T.font,display:"flex",alignItems:"center",gap:5}}>
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1v9M3.5 6.5L7 10l3.5-3.5M2 12h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        CSV
+                      </button>}
                     </div>
                   </div>
-                  <div style={{width:1,height:36,background:T.border,flexShrink:0}}/>
-                  <div>
-                    <div style={{fontSize:9,color:T.mute,letterSpacing:".08em",marginBottom:5}}>PERÍODO</div>
-                    <div style={{display:"flex",gap:4}}>
-                      {[{v:"7d",l:"7 dias"},{v:"30d",l:"30 dias"},{v:"90d",l:"90 dias"}].map(p=>(
-                        <button key={p.v} onClick={()=>setRepPeriod(p.v)} style={{padding:"5px 10px",borderRadius:7,border:`1px solid ${repPeriod===p.v?"#60a5fa88":T.border}`,background:repPeriod===p.v?"rgba(96,165,250,.1)":"transparent",color:repPeriod===p.v?"#60a5fa":T.sub,fontSize:11,fontFamily:T.font,cursor:"pointer"}}>{p.l}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <button className="btn-p" onClick={fetchRepData} disabled={repLoading} style={{padding:"9px 18px",borderRadius:9,border:"none",background:T.meta,color:"#fff",cursor:repLoading?"not-allowed":"pointer",fontSize:12,fontWeight:600,fontFamily:T.font,display:"flex",alignItems:"center",gap:7,flexShrink:0,opacity:repLoading?.7:1}}>
-                    {repLoading?<><span style={{width:12,height:12,border:"2px solid rgba(255,255,255,.3)",borderTop:"2px solid #fff",borderRadius:"50%",animation:"spin .7s linear infinite",display:"inline-block"}}></span>Buscando...</>:<>🔄 Buscar dados</>}
-                  </button>
-                  {agg&&<button className="btn-p" onClick={exportCSV} style={{padding:"9px 14px",borderRadius:9,border:"none",background:T.accent,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:T.font,flexShrink:0}}>⬇ CSV</button>}
                 </div>
 
-                {repError&&<div style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.2)",borderRadius:12,padding:"12px 16px",fontSize:12,color:T.err,marginBottom:14}}>⚠ {repError}</div>}
+                {/* ── States ── */}
+                {repError&&<div style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",borderRadius:10,padding:"12px 16px",fontSize:12,color:T.err,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>⚠ {repError}</div>}
 
                 {!agg&&!repLoading&&!repError&&(
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"50px 20px",textAlign:"center"}}>
-                    <div style={{fontSize:36,marginBottom:12}}>📊</div>
-                    <div style={{fontSize:15,fontWeight:600,color:T.txt,marginBottom:6}}>Selecione a conta e o período</div>
-                    <div style={{fontSize:12,color:T.mute,maxWidth:320,lineHeight:1.7}}>Clique em <strong style={{color:T.txt}}>Buscar dados</strong> para ver as métricas reais da Meta API.</div>
-                    {metaStatus!=="connected"&&<button className="btn-p" onClick={()=>setView("connections")} style={{marginTop:16,padding:"10px 22px",borderRadius:10,border:"none",background:T.accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:T.font}}>Conectar Business Manager →</button>}
+                  <div className="card" style={{background:T.card,borderRadius:14,border:`1px dashed ${T.borderMid}`,padding:"60px 20px",textAlign:"center"}}>
+                    <div style={{fontSize:40,marginBottom:14}}>📊</div>
+                    <div style={{fontSize:15,fontWeight:600,color:T.txt,marginBottom:6}}>Pronto para gerar seu relatório</div>
+                    <div style={{fontSize:12,color:T.mute,maxWidth:340,margin:"0 auto",lineHeight:1.7,marginBottom:18}}>Selecione a conta e o período acima e clique em <strong style={{color:T.txt}}>Gerar relatório</strong> para ver as métricas reais.</div>
+                    {metaStatus!=="connected"&&<button className="btn-p" onClick={()=>setView("connections")} style={{padding:"10px 22px",borderRadius:10,border:"none",background:T.accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:T.font}}>Conectar Business Manager →</button>}
                   </div>
                 )}
 
+                {/* ── REPORT VIEW ── */}
                 {agg&&(
                   <div>
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-                      <div style={{width:36,height:36,borderRadius:9,background:"rgba(0,129,251,.1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:T.meta}}>{repClient==="all"?"ALL":repClient.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
-                      <div><div style={{fontSize:14,fontWeight:600,color:T.txt}}>{repClient==="all"?"Todas as contas":repClient}</div><div style={{fontSize:11,color:T.mute}}>{repPeriod==="7d"?"7 dias":repPeriod==="30d"?"30 dias":"90 dias"} · Meta Ads · {rd.length} conta(s)</div></div>
-                      <span className="tag" style={{marginLeft:8,background:"rgba(34,197,94,.1)",color:T.ok}}>✅ Dados reais</span>
+                    {/* Account header */}
+                    <div className="card" style={{background:T.card,borderRadius:12,border:`1px solid ${T.border}`,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                      <div style={{width:42,height:42,borderRadius:11,background:"rgba(0,129,251,.12)",border:"1px solid rgba(0,129,251,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:T.meta,flexShrink:0}}>
+                        {repClient==="all"?"📊":repClient.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:15,fontWeight:600,color:T.txt,marginBottom:2}}>{repClient==="all"?"Visão consolidada":repClient}</div>
+                        <div style={{fontSize:11,color:T.mute,display:"flex",gap:10,flexWrap:"wrap"}}>
+                          <span>📅 {periodLabels[repPeriod]}</span>
+                          <span>•</span>
+                          <span>{rd.length} conta{rd.length>1?"s":""}</span>
+                          <span>•</span>
+                          <span style={{color:T.ok}}>● Dados reais Meta API</span>
+                        </div>
+                      </div>
                     </div>
-                    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:12,marginBottom:12}}>
-                      <MBox label="Impressões" value={agg.impressoes.toLocaleString("pt-BR")} sub="total no período" accent="#a78bfa"/>
-                      <MBox label="Alcance" value={agg.alcance.toLocaleString("pt-BR")} sub="pessoas únicas" accent="#60a5fa"/>
-                      <MBox label="CTR" value={agg.ctr+"%"} sub={parseFloat(agg.ctr)<1?"abaixo da média":"bom"} accent={parseFloat(agg.ctr)<1?T.warn:T.ok}/>
-                      <MBox label="CPC" value={"R$ "+parseFloat(agg.cpc).toLocaleString("pt-BR",{minimumFractionDigits:2})} sub="custo por clique" accent={T.sub}/>
+
+                    {/* HERO METRICS — primary 4 */}
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:isMobile?10:12,marginBottom:12}}>
+                      {[
+                        {l:"Investido",v:`R$ ${agg.investido.toLocaleString("pt-BR",{minimumFractionDigits:2})}`,sub:"valor gasto",c:T.accent,big:true},
+                        {l:"Resultados",v:agg.conversoes.toLocaleString("pt-BR"),sub:rd[0]?.primaryType?(actionLabels[rd[0].primaryType]||rd[0].primaryType):"conversões",c:T.ok,big:true},
+                        {l:"Custo por Resultado",v:`R$ ${cpl}`,sub:"CPA / CPL",c:"#a78bfa",big:true},
+                        {l:"ROAS",v:`${roas}x`,sub:`R$ ${agg.valorResult.toLocaleString("pt-BR")} retorno`,c:parseFloat(roas)>=2.5?T.ok:T.warn,big:true},
+                      ].map((m,i)=>(
+                        <div key={i} className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:isMobile?"14px 16px":"18px 22px",position:"relative",overflow:"hidden"}}>
+                          <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:m.c}}></div>
+                          <div style={{fontSize:10,color:T.mute,letterSpacing:".1em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>{m.l}</div>
+                          <div style={{fontFamily:T.mono,fontSize:isMobile?20:26,color:T.txt,fontWeight:500,letterSpacing:"-.01em",marginBottom:5}}>{m.v}</div>
+                          <div style={{fontSize:11,color:T.mute}}>{m.sub}</div>
+                        </div>
+                      ))}
                     </div>
-                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:12,marginBottom:14}}>
-                      <MBox label="Valor Investido" value={"R$ "+agg.investido.toLocaleString("pt-BR",{minimumFractionDigits:2})} sub={repPeriod==="7d"?"última semana":"último período"} accent={T.accent}/>
-                      <MBox label="Conversões" value={agg.conversoes.toLocaleString("pt-BR")} sub={`CPL: R$ ${cpl}`} accent={T.ok}/>
-                      <MBox label="Valor do Resultado" value={"R$ "+agg.valorResult.toLocaleString("pt-BR",{minimumFractionDigits:2})} sub={`ROAS: ${roas}x`} accent={T.err}/>
+
+                    {/* SECONDARY METRICS — 4 smaller */}
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
+                      {[
+                        {l:"Impressões",v:agg.impressoes.toLocaleString("pt-BR"),c:"#a78bfa"},
+                        {l:"Alcance",v:agg.alcance.toLocaleString("pt-BR"),c:"#60a5fa"},
+                        {l:"CTR",v:`${agg.ctr}%`,c:parseFloat(agg.ctr)<1?T.warn:T.ok},
+                        {l:"CPC",v:`R$ ${agg.cpc}`,c:T.sub},
+                      ].map((m,i)=>(
+                        <div key={i} className="card" style={{background:"rgba(255,255,255,.02)",borderRadius:11,border:`1px solid ${T.border}`,padding:"12px 16px"}}>
+                          <div style={{fontSize:9,color:T.mute,letterSpacing:".09em",textTransform:"uppercase",marginBottom:5,fontWeight:500}}>{m.l}</div>
+                          <div style={{fontFamily:T.mono,fontSize:16,color:m.c,fontWeight:500}}>{m.v}</div>
+                        </div>
+                      ))}
                     </div>
+
+                    {/* BREAKDOWN — all action types */}
+                    {breakdownList.length>0&&(
+                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 22px",marginBottom:14}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                          <div style={{width:28,height:28,borderRadius:7,background:"rgba(34,197,94,.12)",display:"flex",alignItems:"center",justifyContent:"center"}}>🎯</div>
+                          <div>
+                            <div style={{fontSize:13,fontWeight:600,color:T.txt}}>Detalhamento de conversões</div>
+                            <div style={{fontSize:10,color:T.mute}}>Todos os tipos de ação capturados pelo pixel</div>
+                          </div>
+                        </div>
+                        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>
+                          {breakdownList.map((b,i)=>(
+                            <div key={i} style={{background:"rgba(255,255,255,.02)",borderRadius:9,border:`1px solid ${T.border}`,padding:"10px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                              <div style={{minWidth:0,flex:1}}>
+                                <div style={{fontSize:10,color:T.mute,marginBottom:2}}>{b.label}</div>
+                                <div style={{fontSize:9,color:T.mute,fontFamily:T.mono,opacity:.6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.type}</div>
+                              </div>
+                              <div style={{fontFamily:T.mono,fontSize:15,fontWeight:600,color:T.ok,flexShrink:0}}>{b.value.toLocaleString("pt-BR")}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* PERFORMANCE INSIGHTS */}
                     <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:14}}>
-                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"16px 20px",display:"flex",alignItems:"center",gap:14}}>
-                        <div style={{width:50,height:50,borderRadius:13,background:parseFloat(roas)>=3?"rgba(34,197,94,.1)":"rgba(245,158,11,.1)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                          <span style={{fontFamily:T.mono,fontSize:15,fontWeight:700,color:parseFloat(roas)>=3?T.ok:T.warn}}>{roas}x</span>
+                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 20px"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                          <div style={{width:42,height:42,borderRadius:11,background:parseFloat(roas)>=3?"rgba(34,197,94,.12)":parseFloat(roas)>=2?"rgba(245,158,11,.12)":"rgba(239,68,68,.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:parseFloat(roas)>=3?T.ok:parseFloat(roas)>=2?T.warn:T.err,flexShrink:0,fontFamily:T.mono}}>{roas}x</div>
+                          <div><div style={{fontSize:9,color:T.mute,letterSpacing:".09em",textTransform:"uppercase",fontWeight:500,marginBottom:2}}>ROAS</div><div style={{fontSize:13,fontWeight:600,color:T.txt}}>Retorno sobre investimento</div></div>
                         </div>
-                        <div>
-                          <div style={{fontSize:10,color:T.mute,letterSpacing:".08em",textTransform:"uppercase",marginBottom:3}}>ROAS</div>
-                          <div style={{fontSize:12,color:T.sub,lineHeight:1.6}}>Para cada <span style={{color:T.txt,fontWeight:500}}>R$1</span> investido, gerou <span style={{color:parseFloat(roas)>=3?T.ok:T.warn,fontWeight:600}}>R${roas}</span>.</div>
-                          <div style={{marginTop:6}}>{parseFloat(roas)>=4?<span className="tag" style={{background:"rgba(34,197,94,.1)",color:T.ok}}>🔥 Excelente</span>:parseFloat(roas)>=2.5?<span className="tag" style={{background:"rgba(245,158,11,.1)",color:T.warn}}>⚡ Bom</span>:<span className="tag" style={{background:"rgba(239,68,68,.1)",color:T.err}}>⚠ Otimizar</span>}</div>
-                        </div>
+                        <div style={{fontSize:12,color:T.sub,lineHeight:1.6,marginBottom:8}}>Para cada <span style={{color:T.txt,fontWeight:500}}>R$ 1,00</span> investido, gerou <span style={{color:parseFloat(roas)>=3?T.ok:parseFloat(roas)>=2?T.warn:T.err,fontWeight:600}}>R$ {roas}</span> em valor.</div>
+                        {parseFloat(roas)>=4?<span className="tag" style={{background:"rgba(34,197,94,.1)",color:T.ok}}>🔥 Excelente</span>:parseFloat(roas)>=2.5?<span className="tag" style={{background:"rgba(245,158,11,.1)",color:T.warn}}>⚡ Bom</span>:parseFloat(roas)>0?<span className="tag" style={{background:"rgba(239,68,68,.1)",color:T.err}}>⚠ Otimizar</span>:<span className="tag" style={{background:"rgba(71,85,105,.15)",color:T.mute}}>Sem valor de conversão</span>}
                       </div>
-                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"16px 20px",display:"flex",alignItems:"center",gap:14}}>
-                        <div style={{width:50,height:50,borderRadius:13,background:"rgba(96,165,250,.1)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                          <span style={{fontFamily:T.mono,fontSize:13,fontWeight:700,color:"#60a5fa"}}>R${cpl}</span>
+                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 20px"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                          <div style={{width:42,height:42,borderRadius:11,background:"rgba(96,165,250,.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#60a5fa",flexShrink:0,fontFamily:T.mono}}>R${cpl}</div>
+                          <div><div style={{fontSize:9,color:T.mute,letterSpacing:".09em",textTransform:"uppercase",fontWeight:500,marginBottom:2}}>CPA / CPL</div><div style={{fontSize:13,fontWeight:600,color:T.txt}}>Custo por aquisição</div></div>
                         </div>
-                        <div>
-                          <div style={{fontSize:10,color:T.mute,letterSpacing:".08em",textTransform:"uppercase",marginBottom:3}}>CPL</div>
-                          <div style={{fontSize:12,color:T.sub,lineHeight:1.6}}>Cada conversão custou <span style={{color:"#60a5fa",fontWeight:600}}>R${cpl}</span> com <span style={{color:T.txt,fontWeight:500}}>{agg.conversoes} conversões</span>.</div>
-                        </div>
+                        <div style={{fontSize:12,color:T.sub,lineHeight:1.6}}>Cada conversão custou em média <span style={{color:"#60a5fa",fontWeight:600}}>R$ {cpl}</span> com <span style={{color:T.txt,fontWeight:500}}>{agg.conversoes} resultados</span> no período.</div>
                       </div>
                     </div>
+
+                    {/* PER ACCOUNT TABLE */}
                     {rd.length>1&&(
-                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"16px 20px"}}>
-                        <div style={{fontSize:10,color:T.mute,letterSpacing:".08em",fontWeight:500,marginBottom:12}}>DETALHAMENTO POR CONTA</div>
+                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 22px"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+                          <div style={{fontSize:13,fontWeight:600,color:T.txt}}>Comparativo por conta</div>
+                          <span className="tag" style={{background:"rgba(99,102,241,.1)",color:T.accent}}>{rd.length} contas</span>
+                        </div>
                         <div style={{overflowX:"auto"}}>
-                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:500}}>
-                            <thead><tr>{["Conta","Impressões","Alcance","CTR","CPC","Investido","Conv.","ROAS"].map(h=>(<th key={h} style={{textAlign:"left",padding:"0 0 8px",color:T.mute,fontWeight:500,fontSize:10,letterSpacing:".06em",textTransform:"uppercase",paddingRight:12}}>{h}</th>))}</tr></thead>
-                            <tbody>{rd.map((d,i)=>{const acRoas=parseFloat(d.investido)>0?(parseFloat(d.valorResult)/parseFloat(d.investido)).toFixed(2):"0.00";return(
+                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
+                            <thead><tr>{["Conta","Investido","Resultados","CPA","ROAS","CTR","CPC"].map(h=>(<th key={h} style={{textAlign:"left",padding:"0 12px 10px 0",color:T.mute,fontWeight:600,fontSize:9,letterSpacing:".08em",textTransform:"uppercase"}}>{h}</th>))}</tr></thead>
+                            <tbody>{rd.map((d,i)=>{const acRoas=parseFloat(d.investido)>0?(parseFloat(d.valorResult)/parseFloat(d.investido)).toFixed(2):"0.00";const acCpl=d.conversoes>0?(parseFloat(d.investido)/d.conversoes).toFixed(2):"–";return(
                               <tr key={i} className="rh" style={{borderTop:`1px solid ${T.border}`}}>
-                                <td style={{padding:"9px 12px 9px 0",fontWeight:500,color:T.txt}}>{d.client}</td>
-                                <td style={{padding:"9px 12px 9px 0",fontFamily:T.mono,color:T.sub}}>{d.impressoes.toLocaleString("pt-BR")}</td>
-                                <td style={{padding:"9px 12px 9px 0",fontFamily:T.mono,color:T.sub}}>{d.alcance.toLocaleString("pt-BR")}</td>
-                                <td style={{padding:"9px 12px 9px 0",fontFamily:T.mono,color:parseFloat(d.ctr)<1?T.warn:T.ok}}>{d.ctr}%</td>
-                                <td style={{padding:"9px 12px 9px 0",fontFamily:T.mono,color:T.sub}}>R${d.cpc}</td>
-                                <td style={{padding:"9px 12px 9px 0",fontFamily:T.mono,color:T.accent}}>R${parseFloat(d.investido).toFixed(2)}</td>
-                                <td style={{padding:"9px 12px 9px 0",fontFamily:T.mono,color:T.ok}}>{d.conversoes}</td>
-                                <td style={{padding:"9px 0"}}><span style={{fontFamily:T.mono,fontSize:11,background:parseFloat(acRoas)<3?"rgba(245,158,11,.1)":"rgba(34,197,94,.1)",color:parseFloat(acRoas)<3?T.warn:T.ok,borderRadius:5,padding:"2px 7px"}}>{acRoas}x</span></td>
+                                <td style={{padding:"11px 12px 11px 0",fontWeight:500,color:T.txt}}>{d.client}</td>
+                                <td style={{padding:"11px 12px 11px 0",fontFamily:T.mono,color:T.accent,fontWeight:500}}>R$ {parseFloat(d.investido).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
+                                <td style={{padding:"11px 12px 11px 0",fontFamily:T.mono,color:T.ok,fontWeight:500}}>{d.conversoes}</td>
+                                <td style={{padding:"11px 12px 11px 0",fontFamily:T.mono,color:T.sub}}>R$ {acCpl}</td>
+                                <td style={{padding:"11px 12px 11px 0"}}><span style={{fontFamily:T.mono,fontSize:11,background:parseFloat(acRoas)<2?"rgba(239,68,68,.1)":parseFloat(acRoas)<3?"rgba(245,158,11,.1)":"rgba(34,197,94,.1)",color:parseFloat(acRoas)<2?T.err:parseFloat(acRoas)<3?T.warn:T.ok,borderRadius:5,padding:"2px 8px",fontWeight:600}}>{acRoas}x</span></td>
+                                <td style={{padding:"11px 12px 11px 0",fontFamily:T.mono,color:parseFloat(d.ctr)<1?T.warn:T.ok}}>{d.ctr}%</td>
+                                <td style={{padding:"11px 0",fontFamily:T.mono,color:T.sub}}>R$ {d.cpc}</td>
                               </tr>
                             );})}
                             </tbody>
@@ -1175,6 +1328,8 @@ export default function Dashboard(){
               </div>
             );
           })()}
+
+
           {/* ═══════ BUDGET ═══════ */}
           {view==="budget"&&(()=>{
             const symb=(c)=>c==="EUR"?"€":c==="USD"?"$":"R$";
