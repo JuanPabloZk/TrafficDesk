@@ -212,6 +212,8 @@ const N8N_FLOW=`{
 export default function Dashboard(){
   const[view,setView]=useState("dashboard");
   const[dashPeriod,setDashPeriod]=useState("last_30d");
+  const[showDatePicker,setShowDatePicker]=useState(false);
+  const[customRange,setCustomRange]=useState({start:null,end:null,selecting:false});
   const[liveMetrics,setLiveMetrics]=useState(null);
   const[fetchingInsights,setFetchingInsights]=useState(false);
   const[alerts,setAlerts]=useState([]);
@@ -240,12 +242,19 @@ export default function Dashboard(){
   // ── Supabase helpers ──────────────────────────────────────
   function timeAgo(ts){const d=Math.floor((new Date()-new Date(ts))/60000);if(d<60)return d+"min";if(d<1440)return Math.floor(d/60)+"h";return Math.floor(d/1440)+"d";}
 
-  async function fetchInsights(accounts,token,period){
+  async function fetchInsights(accounts,token,period,dateRange){
     if(!token||!accounts?.length)return;
     setFetchingInsights(true);
     try{
       const results=await Promise.all(accounts.map(async(acc)=>{
-        const res=await fetch(`${GRAPH}/act_${acc.id}/insights?fields=impressions,reach,clicks,ctr,cpc,spend,actions,action_values&date_preset=${period||"last_30d"}&level=account&access_token=${token}`);
+        // Build time params — custom range or preset
+        let timeParam;
+        if(dateRange?.start&&dateRange?.end){
+          timeParam=`time_range={"since":"${dateRange.start}","until":"${dateRange.end}"}`;
+        } else {
+          timeParam=`date_preset=${period||"last_30d"}`;
+        }
+        const res=await fetch(`${GRAPH}/act_${acc.id}/insights?fields=impressions,reach,clicks,ctr,cpc,spend,actions,action_values&${timeParam}&level=account&access_token=${token}`);
         const data=await res.json();
         if(data.error||!data.data?.[0])return null;
         const d=data.data[0];
@@ -277,8 +286,19 @@ export default function Dashboard(){
 
   async function changePeriod(p){
     setDashPeriod(p);
+    setCustomRange({start:null,end:null,selecting:false});
+    setShowDatePicker(false);
     if(metaStatus==="connected"&&metaAccounts.length>0&&savedToken){
-      await fetchInsights(metaAccounts,savedToken,p);
+      await fetchInsights(metaAccounts,savedToken,p,null);
+    }
+  }
+
+  async function applyCustomRange(start,end){
+    if(!start||!end)return;
+    setShowDatePicker(false);
+    setDashPeriod("custom");
+    if(metaStatus==="connected"&&metaAccounts.length>0&&savedToken){
+      await fetchInsights(metaAccounts,savedToken,null,{start,end});
     }
   }
 
@@ -499,7 +519,10 @@ export default function Dashboard(){
       setMetaAccounts(finalAccounts);setMetaStatus("connected");setMetaStep(2);
       setSavedToken(metaForm.accessToken);
       await saveConnection("meta",metaForm.accessToken,metaForm.bmId,finalAccounts);
-      await fetchInsights(finalAccounts,metaForm.accessToken,dashPeriod);
+      // ← Fix: switch to dashboard and fetch data immediately
+      setView("dashboard");
+      setLiveMetrics(null); // clear stale data first
+      await fetchInsights(finalAccounts,metaForm.accessToken,dashPeriod,customRange.start?customRange:null);
     }catch(err){
       setMetaStatus("error");
       setMetaError(err.message||"Erro ao conectar. Verifique o token e o BM ID.");
@@ -604,26 +627,171 @@ export default function Dashboard(){
           {/* ═══════ DASHBOARD ═══════ */}
           {view==="dashboard"&&(
             <div>
-              {/* Period selector */}
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-                <div style={{display:"flex",gap:3,background:"rgba(255,255,255,.04)",borderRadius:9,padding:3,border:`1px solid ${T.border}`,flexWrap:"wrap"}}>
-                  {periods.map(p=>(
-                    <button key={p.v} onClick={()=>changePeriod(p.v)} style={{padding:"5px 11px",borderRadius:7,border:"none",cursor:"pointer",fontFamily:T.font,fontSize:11,fontWeight:dashPeriod===p.v?600:400,background:dashPeriod===p.v?"rgba(99,102,241,.15)":"transparent",color:dashPeriod===p.v?T.accent:T.sub,transition:"all .12s"}}>{p.l}</button>
-                  ))}
-                </div>
-                {metaStatus==="connected"&&(
-                  <button onClick={()=>fetchInsights(metaAccounts,savedToken,dashPeriod)} disabled={fetchingInsights} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.sub,cursor:fetchingInsights?"not-allowed":"pointer",fontSize:11,fontFamily:T.font,display:"flex",alignItems:"center",gap:6,opacity:fetchingInsights?.6:1}}>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{animation:fetchingInsights?"spin .8s linear infinite":"none"}}><path d="M10 6A4 4 0 1 1 6 2a4 4 0 0 1 2.83 1.17L10 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M10 1v3H7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    {fetchingInsights?"Buscando...":"Atualizar"}
-                  </button>
-                )}
-                <div style={{marginLeft:"auto",fontSize:11,color:T.mute}}>
-                  {liveMetrics&&!fetchingInsights&&<span style={{color:T.ok}}>✅ Dados reais · {periods.find(p=>p.v===dashPeriod)?.l}</span>}
-                  {!liveMetrics&&metaStatus!=="connected"&&<span>Conecte o BM para dados reais</span>}
-                </div>
-              </div>
+              {/* ── Meta Ads style date picker ── */}
+              {(()=>{
+                const presets=[
+                  {v:"today",l:"Hoje"},{v:"yesterday",l:"Ontem"},
+                  {v:"this_month",l:"Este mês"},{v:"maximum",l:"Máximo"},
+                  {v:"last_7d",l:"Últimos 7 dias"},{v:"last_14d",l:"Últimos 14 dias"},
+                  {v:"last_28d",l:"Últimos 28 dias"},{v:"last_30d",l:"Últimos 30 dias"},
+                  {v:"last_90d",l:"Últimos 90 dias"},{v:"this_week_sun_today",l:"Esta semana"},
+                  {v:"last_week_sun_sat",l:"Semana passada"},{v:"last_month",l:"Mês passado"},
+                ];
+
+                // Calendar helpers
+                const today=new Date();
+                const [calYear,setCalYear]=useState(today.getFullYear());
+                const [calMonth,setCalMonth]=useState(today.getMonth()); // left calendar
+                const rightMonth=calMonth===11?0:calMonth+1;
+                const rightYear=calMonth===11?calYear+1:calYear;
+
+                const monthNames=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+                const monthFull=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+                function getDays(year,month){
+                  const first=new Date(year,month,1).getDay();
+                  const days=new Date(year,month+1,0).getDate();
+                  const dow=(first+6)%7; // Mon=0
+                  return{offset:dow,days};
+                }
+
+                function toISO(y,m,d){return`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;}
+                function fromISO(s){if(!s)return null;const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d);}
+
+                function isInRange(y,m,d){
+                  if(!customRange.start||!customRange.end)return false;
+                  const date=new Date(y,m,d);
+                  return date>fromISO(customRange.start)&&date<fromISO(customRange.end);
+                }
+                function isStart(y,m,d){return toISO(y,m,d)===customRange.start;}
+                function isEnd(y,m,d){return toISO(y,m,d)===customRange.end;}
+
+                function handleDayClick(y,m,d){
+                  const iso=toISO(y,m,d);
+                  if(!customRange.selecting||!customRange.start){
+                    setCustomRange({start:iso,end:null,selecting:true});
+                  } else {
+                    if(iso<customRange.start){
+                      setCustomRange({start:iso,end:customRange.start,selecting:false});
+                      applyCustomRange(iso,customRange.start);
+                    } else {
+                      setCustomRange({start:customRange.start,end:iso,selecting:false});
+                      applyCustomRange(customRange.start,iso);
+                    }
+                  }
+                }
+
+                function renderCalendar(year,month){
+                  const{offset,days}=getDays(year,month);
+                  const cells=[];
+                  for(let i=0;i<offset;i++)cells.push(null);
+                  for(let d=1;d<=days;d++)cells.push(d);
+                  const weeks=[];
+                  for(let i=0;i<cells.length;i+=7)weeks.push(cells.slice(i,i+7));
+                  return(
+                    <div style={{minWidth:200}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                        <span style={{fontSize:12,fontWeight:600,color:T.txt}}>{monthFull[month]} {year}</span>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,marginBottom:4}}>
+                        {["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"].map(d=>(
+                          <div key={d} style={{fontSize:9,color:T.mute,textAlign:"center",padding:"2px 0",fontWeight:500}}>{d}</div>
+                        ))}
+                      </div>
+                      {weeks.map((week,wi)=>(
+                        <div key={wi} style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1}}>
+                          {week.map((d,di)=>{
+                            if(!d)return<div key={di}/>;
+                            const start=isStart(year,month,d);
+                            const end=isEnd(year,month,d);
+                            const inRange=isInRange(year,month,d);
+                            const isToday=toISO(year,month,d)===toISO(today.getFullYear(),today.getMonth(),today.getDate());
+                            return(
+                              <div key={di} onClick={()=>handleDayClick(year,month,d)}
+                                style={{height:28,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,cursor:"pointer",borderRadius:start||end?"50%":"0",background:start||end?"#0081FB":inRange?"rgba(0,129,251,.15)":"transparent",color:start||end?"#fff":isToday?T.accent:T.txt,fontWeight:start||end||isToday?600:400,position:"relative"}}>
+                                {d}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }
+
+                const activeLabel=dashPeriod==="custom"&&customRange.start&&customRange.end
+                  ?`${customRange.start} → ${customRange.end}`
+                  :presets.find(p=>p.v===dashPeriod)?.l||"Últimos 30 dias";
+
+                return(
+                  <div style={{position:"relative",marginBottom:14}}>
+                    {/* Trigger button — looks like Meta Ads */}
+                    <button onClick={()=>setShowDatePicker(!showDatePicker)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",borderRadius:9,border:`1px solid ${T.borderMid}`,background:T.card,color:T.txt,fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:T.font}}>
+                      <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="11" rx="2" stroke={T.meta} strokeWidth="1.2"/><path d="M1 5.5h12" stroke={T.meta} strokeWidth="1.2"/><path d="M4 1v3M10 1v3" stroke={T.meta} strokeWidth="1.2" strokeLinecap="round"/></svg>
+                      <span style={{color:T.meta,fontWeight:600}}>{activeLabel}</span>
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 4l3 3 3-3" stroke={T.sub} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </button>
+
+                    {/* Picker dropdown */}
+                    {showDatePicker&&(
+                      <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:999,background:"#131825",border:`1px solid ${T.borderMid}`,borderRadius:14,boxShadow:"0 20px 60px rgba(0,0,0,.6)",display:"flex",minWidth:560}}>
+                        {/* Left: presets */}
+                        <div style={{width:170,borderRight:`1px solid ${T.border}`,padding:"12px 0",flexShrink:0}}>
+                          <div style={{fontSize:9,color:T.mute,letterSpacing:".08em",padding:"0 14px 8px",fontWeight:500}}>USADOS RECENTEMENTE</div>
+                          {presets.map(p=>(
+                            <div key={p.v} onClick={()=>changePeriod(p.v)}
+                              style={{padding:"7px 14px",fontSize:12,color:dashPeriod===p.v?T.txt:T.sub,cursor:"pointer",background:dashPeriod===p.v?"rgba(255,255,255,.06)":"transparent",display:"flex",alignItems:"center",gap:7}}
+                              onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,.04)"}
+                              onMouseLeave={e=>e.currentTarget.style.background=dashPeriod===p.v?"rgba(255,255,255,.06)":"transparent"}>
+                              {dashPeriod===p.v&&<span style={{width:6,height:6,borderRadius:"50%",background:T.meta,display:"inline-block",flexShrink:0}}></span>}
+                              {dashPeriod!==p.v&&<span style={{width:6,height:6,flexShrink:0}}></span>}
+                              {p.l}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Right: calendars */}
+                        <div style={{flex:1,padding:16}}>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                            <button onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}} style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,lineHeight:1}}>‹</button>
+                            <div style={{fontSize:11,color:T.mute,fontWeight:500}}>
+                              {customRange.start&&customRange.end?`${customRange.start} → ${customRange.end}`:customRange.start?"Selecione a data final":"Selecione o período"}
+                            </div>
+                            <button onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}} style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,lineHeight:1}}>›</button>
+                          </div>
+                          <div style={{display:"flex",gap:20}}>
+                            {renderCalendar(calYear,calMonth)}
+                            {renderCalendar(rightYear,rightMonth)}
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:14,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+                            <div style={{fontSize:11,color:T.mute}}>Fuso: Horário de Brasília</div>
+                            <div style={{display:"flex",gap:8}}>
+                              <button onClick={()=>{setShowDatePicker(false);setCustomRange({start:null,end:null,selecting:false});}} style={{padding:"6px 14px",borderRadius:7,border:`1px solid ${T.border}`,background:"transparent",color:T.sub,fontSize:11,cursor:"pointer",fontFamily:T.font}}>Cancelar</button>
+                              <button onClick={()=>{if(customRange.start&&customRange.end)applyCustomRange(customRange.start,customRange.end);}} disabled={!customRange.start||!customRange.end} style={{padding:"6px 14px",borderRadius:7,border:"none",background:customRange.start&&customRange.end?T.meta:"rgba(0,129,251,.3)",color:"#fff",fontSize:11,cursor:customRange.start&&customRange.end?"pointer":"not-allowed",fontFamily:T.font,fontWeight:600}}>Atualizar</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Refresh + status */}
+                    <div style={{display:"flex",gap:8,alignItems:"center",marginTop:8}}>
+                      {metaStatus==="connected"&&(
+                        <button onClick={()=>fetchInsights(metaAccounts,savedToken,dashPeriod==="custom"?null:dashPeriod,customRange.start&&customRange.end?customRange:null)} disabled={fetchingInsights} style={{padding:"5px 11px",borderRadius:7,border:`1px solid ${T.border}`,background:"transparent",color:T.sub,cursor:fetchingInsights?"not-allowed":"pointer",fontSize:11,fontFamily:T.font,display:"flex",alignItems:"center",gap:5,opacity:fetchingInsights?.5:1}}>
+                          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{animation:fetchingInsights?"spin .8s linear infinite":"none"}}><path d="M10 6A4 4 0 1 1 6 2a4 4 0 0 1 2.83 1.17L10 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M10 1v3H7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          {fetchingInsights?"Buscando...":"Atualizar"}
+                        </button>
+                      )}
+                      {liveMetrics&&!fetchingInsights&&<span style={{fontSize:11,color:T.ok}}>✅ Dados reais · {activeLabel}</span>}
+                      {fetchingInsights&&<span style={{fontSize:11,color:T.accent}}>⏳ Buscando dados...</span>}
+                      {!liveMetrics&&metaStatus!=="connected"&&<span style={{fontSize:11,color:T.mute}}>Conecte o BM para ver dados reais</span>}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:isMobile?10:12,marginBottom:isMobile?14:18}}>
-                <MCard label="Gasto Total" value={`R$ ${(total/1000).toFixed(1)}k`} sub={periods.find(p=>p.v===dashPeriod)?.l||"período"} accent={T.accent} m={isMobile}/>
+                <MCard label="Gasto Total" value={`R$ ${(total/1000).toFixed(1)}k`} sub={dashPeriod==="custom"&&customRange.start?`${customRange.start} → ${customRange.end||"..."}`:periods.find(p=>p.v===dashPeriod)?.l||"período"} accent={T.accent} m={isMobile}/>
                 <MCard label="ROAS Meta" value={avgMROAS+"x"} sub={liveMetrics?"dados reais":"sem dados"} accent={T.meta} up={parseFloat(avgMROAS)>2} m={isMobile}/>
                 <MCard label="ROAS Google" value={avgGROAS+"x"} sub="estável" accent={T.google} m={isMobile}/>
                 <MCard label="Alertas" value={alerts.length} sub={`${crit} crítico${crit!==1?"s":""}`} accent={T.err} up={false} m={isMobile}/>
