@@ -214,6 +214,8 @@ export default function Dashboard(){
   const[dashPeriod,setDashPeriod]=useState("last_30d");
   const[showDatePicker,setShowDatePicker]=useState(false);
   const[customRange,setCustomRange]=useState({start:null,end:null,selecting:false});
+  const[calYear,setCalYear]=useState(()=>new Date().getFullYear());
+  const[calMonth,setCalMonth]=useState(()=>new Date().getMonth());
   const[liveMetrics,setLiveMetrics]=useState(null);
   const[fetchingInsights,setFetchingInsights]=useState(false);
   const[alerts,setAlerts]=useState([]);
@@ -640,8 +642,6 @@ export default function Dashboard(){
 
                 // Calendar helpers
                 const today=new Date();
-                const [calYear,setCalYear]=useState(today.getFullYear());
-                const [calMonth,setCalMonth]=useState(today.getMonth()); // left calendar
                 const rightMonth=calMonth===11?0:calMonth+1;
                 const rightYear=calMonth===11?calYear+1:calYear;
 
