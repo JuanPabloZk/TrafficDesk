@@ -466,8 +466,6 @@ export default function Dashboard(){
   const[connTab,setConnTab]=useState("connect"); // connect | docs
   const[metaError,setMetaError]=useState("");
 
-  const GRAPH="https://graph.facebook.com/v19.0";
-
   const connectMeta=async()=>{
     if(!metaForm.accessToken||!metaForm.bmId)return;
     setMetaStatus("connecting");
