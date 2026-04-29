@@ -357,12 +357,39 @@ export default function Dashboard(){
     if(!user?.id)return;
     await supabase.from("connections").upsert({user_id:user.id,platform,access_token:token,bm_id:bmId,status:"connected",connected_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:"user_id,platform"});
     localStorage.setItem(`td_${platform}_accounts`,JSON.stringify(accounts));
+
+    // ★ Persistir contas como "clients" no Supabase
+    if(accounts?.length>0){
+      const clientRows=accounts.map(a=>({
+        user_id:user.id,
+        account_id:a.id,
+        platform,
+        name:a.name,
+        short:a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),
+        platforms:[platform],
+        currency:a.currency||"BRL",
+        status:a.status==="active"?"active":"paused",
+        last_synced_at:new Date().toISOString(),
+        is_archived:false,
+      }));
+      // Upsert por (user_id, account_id, platform) — não duplica se já existir
+      await supabase.from("clients").upsert(clientRows,{onConflict:"user_id,account_id,platform"});
+    }
+  }
+
+  async function loadSavedClients(platform){
+    if(!user?.id)return[];
+    const{data,error}=await supabase.from("clients").select("*").eq("user_id",user.id).eq("platform",platform).eq("is_archived",false).order("name");
+    if(error||!data)return[];
+    return data.map(c=>({id:c.account_id,name:c.name,status:c.status,currency:c.currency||"BRL",spend:"R$ 0,00"}));
   }
 
   async function clearConnection(platform){
     if(!user?.id)return;
     await supabase.from("connections").upsert({user_id:user.id,platform,status:"idle",access_token:null,bm_id:null,updated_at:new Date().toISOString()},{onConflict:"user_id,platform"});
     localStorage.removeItem(`td_${platform}_accounts`);
+    // Archive (não deleta — mantém histórico) clientes da plataforma
+    await supabase.from("clients").update({is_archived:true}).eq("user_id",user.id).eq("platform",platform);
   }
 
   async function saveClientBudget(accountId,platform,budget){
@@ -428,23 +455,40 @@ export default function Dashboard(){
           if(conn.platform==="meta"&&conn.access_token&&conn.bm_id){
             setMetaForm(f=>({...f,accessToken:conn.access_token,bmId:conn.bm_id}));
             setSavedToken(conn.access_token);
+
+            // ★ Priority 1: Load from Supabase clients table (instant, works offline)
+            const savedClients=await loadSavedClients("meta");
+            if(savedClients.length>0){
+              setMetaAccounts(savedClients);setMetaStatus("connected");setMetaStep(2);
+              localStorage.setItem("td_meta_accounts",JSON.stringify(savedClients)); // sync cache
+              await fetchInsights(savedClients,conn.access_token,dashPeriod);
+              continue;
+            }
+
+            // Priority 2: localStorage cache
             const cached=localStorage.getItem("td_meta_accounts");
             if(cached){
               const accs=JSON.parse(cached);
               setMetaAccounts(accs);setMetaStatus("connected");setMetaStep(2);
+              // Save to Supabase for next time
+              await saveConnection("meta",conn.access_token,conn.bm_id,accs);
               await fetchInsights(accs,conn.access_token,dashPeriod);
-            } else {
-              try{
-                const res=await fetch(`${GRAPH}/${conn.bm_id}/owned_ad_accounts?fields=id,name,account_status,currency,amount_spent&access_token=${conn.access_token}&limit=20`);
-                const d=await res.json();
-                if(!d.error&&d.data){
-                  const accs=d.data.map(a=>({id:a.id.replace("act_",""),name:a.name,status:a.account_status===1?"active":"inactive",currency:a.currency||"BRL",spend:"R$ 0,00"}));
-                  setMetaAccounts(accs);setMetaStatus("connected");setMetaStep(2);
-                  localStorage.setItem("td_meta_accounts",JSON.stringify(accs));
-                  await fetchInsights(accs,conn.access_token,dashPeriod);
-                }
-              }catch(e){console.error("restore meta:",e);}
+              continue;
             }
+
+            // Priority 3: Fetch fresh from Meta API
+            try{
+              const res=await fetch(`${GRAPH}/${conn.bm_id}/owned_ad_accounts?fields=id,name,account_status,currency,amount_spent&access_token=${conn.access_token}&limit=20`);
+              const d=await res.json();
+              if(!d.error&&d.data){
+                const accs=d.data.map(a=>({id:a.id.replace("act_",""),name:a.name,status:a.account_status===1?"active":"inactive",currency:a.currency||"BRL",spend:"R$ 0,00"}));
+                setMetaAccounts(accs);setMetaStatus("connected");setMetaStep(2);
+                localStorage.setItem("td_meta_accounts",JSON.stringify(accs));
+                // Save to Supabase
+                await saveConnection("meta",conn.access_token,conn.bm_id,accs);
+                await fetchInsights(accs,conn.access_token,dashPeriod);
+              }
+            }catch(e){console.error("restore meta:",e);}
           }
         }
       }
