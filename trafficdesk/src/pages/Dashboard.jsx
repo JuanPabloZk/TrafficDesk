@@ -228,6 +228,11 @@ export default function Dashboard(){
   const[repLoading,setRepLoading]=useState(false);
   const[repData,setRepData]=useState(null);
   const[repError,setRepError]=useState("");
+  const[repShowPicker,setRepShowPicker]=useState(false);
+  const[repShowAccounts,setRepShowAccounts]=useState(false);
+  const[repCustomRange,setRepCustomRange]=useState({start:null,end:null,selecting:false});
+  const[repCalYear,setRepCalYear]=useState(()=>new Date().getFullYear());
+  const[repCalMonth,setRepCalMonth]=useState(()=>new Date().getMonth());
   const[isMobile,setIsMobile]=useState(()=>typeof window!=="undefined"&&window.innerWidth<768);
   const{user,signOut}=useAuth();
   const navigate=useNavigate();
@@ -1120,255 +1125,403 @@ export default function Dashboard(){
           {/* ═══════ REPORTS ═══════ */}
           {view==="reports"&&(()=>{
             const repPeriodMap={"7d":"last_7d","14d":"last_14d","30d":"last_30d","90d":"last_90d","this_month":"this_month","last_month":"last_month"};
-            const periodLabels={"7d":"Últimos 7 dias","14d":"Últimos 14 dias","30d":"Últimos 30 dias","90d":"Últimos 90 dias","this_month":"Este mês","last_month":"Mês passado"};
-
+            const periodLabels={"7d":"7 dias","14d":"14 dias","30d":"30 dias","90d":"90 dias","this_month":"Este mês","last_month":"Mês passado"};
+            const actionLabels={"purchase":"Compras","omni_purchase":"Compras (Omni)","offsite_conversion.fb_pixel_purchase":"Compras (Pixel)","lead":"Leads","omni_lead":"Leads (Omni)","offsite_conversion.fb_pixel_lead":"Leads (Pixel)","onsite_conversion.lead_grouped":"Leads agrupados","complete_registration":"Cadastros","omni_complete_registration":"Cadastros (Omni)","messaging_conversation_started_7d":"Conversas WhatsApp","onsite_conversion.messaging_conversation_started_7d":"Conversas Messenger","messaging_first_reply":"Primeira resposta","onsite_conversion.purchase":"Compras (onsite)","onsite_conversion.flow_complete":"Fluxos completos","submit_application":"Aplicações","schedule":"Agendamentos"};
             const conversionTypes=["purchase","omni_purchase","offsite_conversion.fb_pixel_purchase","lead","omni_lead","offsite_conversion.fb_pixel_lead","onsite_conversion.lead_grouped","complete_registration","omni_complete_registration","messaging_conversation_started_7d","onsite_conversion.messaging_conversation_started_7d","messaging_first_reply","onsite_conversion.purchase","onsite_conversion.flow_complete","submit_application","schedule"];
             const valueTypes=["purchase","omni_purchase","offsite_conversion.fb_pixel_purchase","lead","omni_lead","offsite_conversion.fb_pixel_lead","onsite_conversion.purchase"];
-            const actionLabels={"purchase":"Compras","omni_purchase":"Compras (Omni)","offsite_conversion.fb_pixel_purchase":"Compras (Pixel)","lead":"Leads","omni_lead":"Leads (Omni)","offsite_conversion.fb_pixel_lead":"Leads (Pixel)","onsite_conversion.lead_grouped":"Leads agrupados","complete_registration":"Cadastros","omni_complete_registration":"Cadastros (Omni)","messaging_conversation_started_7d":"Conversas iniciadas (7d)","onsite_conversion.messaging_conversation_started_7d":"Conversas Messenger","messaging_first_reply":"Primeira resposta","onsite_conversion.purchase":"Compras (onsite)","onsite_conversion.flow_complete":"Fluxos completos","submit_application":"Aplicações","schedule":"Agendamentos","landing_page_view":"Visitas LP","add_to_cart":"Add ao carrinho","initiate_checkout":"Checkout iniciado","video_view":"Vídeos vistos","page_engagement":"Engajamento","post_engagement":"Posts engajados","like":"Curtidas","comment":"Comentários","link_click":"Cliques no link"};
+            const primaryOrder=["purchase","omni_purchase","offsite_conversion.fb_pixel_purchase","lead","omni_lead","offsite_conversion.fb_pixel_lead","messaging_conversation_started_7d","onsite_conversion.messaging_conversation_started_7d","complete_registration"];
+
+            const repPresets=[
+              {v:"today",l:"Hoje"},{v:"yesterday",l:"Ontem"},
+              {v:"this_month",l:"Este mês"},{v:"maximum",l:"Máximo"},
+              {v:"last_7d",l:"Últimos 7 dias"},{v:"last_14d",l:"Últimos 14 dias"},
+              {v:"last_28d",l:"Últimos 28 dias"},{v:"last_30d",l:"Últimos 30 dias"},
+              {v:"last_90d",l:"Últimos 90 dias"},{v:"this_week_sun_today",l:"Esta semana"},
+              {v:"last_week_sun_sat",l:"Semana passada"},{v:"last_month",l:"Mês passado"},
+            ];
+            const repPresetLabel=repPresets.find(p=>p.v===repPeriod)?.l||"Últimos 30 dias";
+            const repActivePeriodLabel=repPeriod==="custom"&&repCustomRange.start&&repCustomRange.end?`${repCustomRange.start} → ${repCustomRange.end}`:repPresetLabel;
+
+            const repRightMonth=repCalMonth===11?0:repCalMonth+1;
+            const repRightYear=repCalMonth===11?repCalYear+1:repCalYear;
+            const repMonthFull=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+            function repGetDays(y,m){const first=new Date(y,m,1).getDay();const days=new Date(y,m+1,0).getDate();return{offset:(first+6)%7,days};}
+            function repToISO(y,m,d){return`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;}
+            function repFromISO(s){if(!s)return null;const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d);}
+            function repIsStart(y,m,d){return repToISO(y,m,d)===repCustomRange.start;}
+            function repIsEnd(y,m,d){return repToISO(y,m,d)===repCustomRange.end;}
+            function repInRange(y,m,d){if(!repCustomRange.start||!repCustomRange.end)return false;const dt=new Date(y,m,d);return dt>repFromISO(repCustomRange.start)&&dt<repFromISO(repCustomRange.end);}
+            const repToday=new Date();
+            function repIsToday(y,m,d){return repToISO(y,m,d)===repToISO(repToday.getFullYear(),repToday.getMonth(),repToday.getDate());}
+
+            function repHandleDay(y,m,d){
+              const iso=repToISO(y,m,d);
+              if(!repCustomRange.selecting||!repCustomRange.start){
+                setRepCustomRange({start:iso,end:null,selecting:true});
+              } else {
+                const [s,e]=iso<repCustomRange.start?[iso,repCustomRange.start]:[repCustomRange.start,iso];
+                setRepCustomRange({start:s,end:e,selecting:false});
+                setRepPeriod("custom");
+                setRepShowPicker(false);
+              }
+            }
+
+            function repRenderCal(year,month){
+              const{offset,days}=repGetDays(year,month);
+              const cells=[];
+              for(let i=0;i<offset;i++)cells.push(null);
+              for(let d=1;d<=days;d++)cells.push(d);
+              const weeks=[];
+              for(let i=0;i<cells.length;i+=7)weeks.push(cells.slice(i,i+7));
+              return(
+                <div style={{minWidth:190}}>
+                  <div style={{fontSize:13,fontWeight:600,color:T.txt,marginBottom:10,textAlign:"center"}}>{repMonthFull[month]} {year}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginBottom:6}}>
+                    {["S","T","Q","Q","S","S","D"].map((d,i)=>(<div key={i} style={{fontSize:9,color:T.mute,textAlign:"center",padding:"2px 0",fontWeight:500}}>{d}</div>))}
+                  </div>
+                  {weeks.map((wk,wi)=>(
+                    <div key={wi} style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
+                      {wk.map((d,di)=>{
+                        if(!d)return<div key={di}/>;
+                        const start=repIsStart(year,month,d);
+                        const end=repIsEnd(year,month,d);
+                        const inR=repInRange(year,month,d);
+                        const todayD=repIsToday(year,month,d);
+                        return(
+                          <div key={di} onClick={()=>repHandleDay(year,month,d)} style={{height:30,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,cursor:"pointer",borderRadius:start||end?"50%":"2px",background:start||end?"#0081FB":inR?"rgba(0,129,251,.18)":"transparent",color:start||end?"#fff":todayD?"#0081FB":T.txt,fontWeight:start||end||todayD?600:400}}>
+                            {d}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              );
+            }
 
             const fetchRepData=async()=>{
-              if(metaStatus!=="connected"||metaAccounts.length===0){setRepError("Conecte o Business Manager na aba Conexões para ver os dados reais.");return;}
-              setRepLoading(true);setRepError("");
+              if(metaStatus!=="connected"||metaAccounts.length===0){setRepError("Conecte o Business Manager para ver os dados.");return;}
+              setRepLoading(true);setRepError("");setRepData(null);
               try{
                 const accs=repClient==="all"?metaAccounts:metaAccounts.filter(a=>a.name===repClient||a.id===repClient);
-                if(accs.length===0){setRepError("Nenhuma conta encontrada.");setRepLoading(false);return;}
+                if(!accs.length){setRepError("Nenhuma conta encontrada.");setRepLoading(false);return;}
                 const results=await Promise.all(accs.map(async(acc)=>{
-                  const res=await fetch(`${GRAPH}/act_${acc.id}/insights?fields=impressions,reach,clicks,ctr,cpc,spend,actions,action_values&date_preset=${repPeriodMap[repPeriod]||"last_30d"}&level=account&access_token=${savedToken}`);
+                  let timeParam;
+                  if(repPeriod==="custom"&&repCustomRange.start&&repCustomRange.end){
+                    timeParam=`time_range={"since":"${repCustomRange.start}","until":"${repCustomRange.end}"}`;
+                  } else {
+                    timeParam=`date_preset=${repPeriodMap[repPeriod]||repPeriod||"last_30d"}`;
+                  }
+                  const res=await fetch(`${GRAPH}/act_${acc.id}/insights?fields=impressions,reach,clicks,ctr,cpc,spend,actions,action_values&${timeParam}&level=account&access_token=${savedToken}`);
                   const data=await res.json();
                   if(data.error||!data.data?.[0])return null;
                   const d=data.data[0];
-
-                  // Get all conversion-type actions
                   const allConvs=(d.actions||[]).filter(a=>conversionTypes.includes(a.action_type));
-                  // Primary result (first match in priority order)
-                  const primaryOrder=["purchase","omni_purchase","offsite_conversion.fb_pixel_purchase","lead","omni_lead","offsite_conversion.fb_pixel_lead","messaging_conversation_started_7d","onsite_conversion.messaging_conversation_started_7d","complete_registration"];
-                  let totalConv=0;
-                  let primaryType=null;
-                  for(const t of primaryOrder){
-                    const f=d.actions?.find(a=>a.action_type===t);
-                    if(f){totalConv=parseInt(f.value)||0;primaryType=t;break;}
-                  }
-                  if(totalConv===0&&allConvs.length>0){
-                    totalConv=allConvs.reduce((s,a)=>s+(parseInt(a.value)||0),0);
-                    primaryType=allConvs[0]?.action_type;
-                  }
+                  let totalConv=0,primaryType=null;
+                  for(const t of primaryOrder){const f=d.actions?.find(a=>a.action_type===t);if(f){totalConv=parseInt(f.value)||0;primaryType=t;break;}}
+                  if(!totalConv&&allConvs.length)totalConv=allConvs.reduce((s,a)=>s+(parseInt(a.value)||0),0);
                   const convVal=(d.action_values||[]).find(a=>valueTypes.includes(a.action_type));
-
-                  return{
-                    client:acc.name,accountId:acc.id,
-                    impressoes:parseInt(d.impressions)||0,
-                    alcance:parseInt(d.reach)||0,
-                    cliques:parseInt(d.clicks)||0,
-                    ctr:parseFloat(d.ctr||0).toFixed(2),
-                    cpc:parseFloat(d.cpc||0).toFixed(2),
-                    investido:parseFloat(d.spend||0).toFixed(2),
-                    conversoes:totalConv,
-                    valorResult:parseFloat(convVal?.value||0).toFixed(2),
-                    primaryType,
-                    breakdown:allConvs.map(a=>({type:a.action_type,label:actionLabels[a.action_type]||a.action_type,value:parseInt(a.value)||0})),
-                  };
+                  return{client:acc.name,accountId:acc.id,impressoes:parseInt(d.impressions)||0,alcance:parseInt(d.reach)||0,cliques:parseInt(d.clicks)||0,ctr:parseFloat(d.ctr||0).toFixed(2),cpc:parseFloat(d.cpc||0).toFixed(2),investido:parseFloat(d.spend||0).toFixed(2),conversoes:totalConv,valorResult:parseFloat(convVal?.value||0).toFixed(2),primaryType,breakdown:allConvs.map(a=>({type:a.action_type,label:actionLabels[a.action_type]||a.action_type,value:parseInt(a.value)||0}))};
                 }));
-                const valid=results.filter(Boolean);
-                setRepData(valid);
+                setRepData(results.filter(Boolean));
               }catch(e){setRepError("Erro: "+e.message);}
               finally{setRepLoading(false);}
             };
 
-            const rd=repData;
-            const agg=rd&&rd.length>0?rd.reduce((acc,d)=>({impressoes:acc.impressoes+d.impressoes,alcance:acc.alcance+d.alcance,cliques:acc.cliques+(d.cliques||0),ctr:0,cpc:0,investido:acc.investido+parseFloat(d.investido),conversoes:acc.conversoes+d.conversoes,valorResult:acc.valorResult+parseFloat(d.valorResult)}),{impressoes:0,alcance:0,cliques:0,ctr:0,cpc:0,investido:0,conversoes:0,valorResult:0}):null;
-            if(agg&&rd.length>0){agg.ctr=parseFloat((rd.reduce((s,d)=>s+parseFloat(d.ctr),0)/rd.length).toFixed(2));agg.cpc=parseFloat((rd.reduce((s,d)=>s+parseFloat(d.cpc),0)/rd.length).toFixed(2));}
+            const rd=repData||[];
+            const agg=rd.length?rd.reduce((a,d)=>({impressoes:a.impressoes+d.impressoes,alcance:a.alcance+d.alcance,cliques:a.cliques+(d.cliques||0),ctr:0,cpc:0,investido:a.investido+parseFloat(d.investido),conversoes:a.conversoes+d.conversoes,valorResult:a.valorResult+parseFloat(d.valorResult)}),{impressoes:0,alcance:0,cliques:0,ctr:0,cpc:0,investido:0,conversoes:0,valorResult:0}):null;
+            if(agg&&rd.length){agg.ctr=parseFloat((rd.reduce((s,d)=>s+parseFloat(d.ctr),0)/rd.length).toFixed(2));agg.cpc=parseFloat((rd.reduce((s,d)=>s+parseFloat(d.cpc),0)/rd.length).toFixed(2));}
             const roas=agg&&agg.investido>0?(agg.valorResult/agg.investido).toFixed(2):"0.00";
-            const cpl=agg&&agg.conversoes>0?(agg.investido/agg.conversoes).toFixed(2):"0.00";
+            const cpa=agg&&agg.conversoes>0?(agg.investido/agg.conversoes).toFixed(2):"0.00";
 
-            // Aggregate breakdown across all accounts
             const aggBreakdown={};
-            (rd||[]).forEach(d=>{
-              (d.breakdown||[]).forEach(b=>{
-                if(!aggBreakdown[b.type]){aggBreakdown[b.type]={type:b.type,label:b.label,value:0};}
-                aggBreakdown[b.type].value+=b.value;
-              });
-            });
+            rd.forEach(d=>(d.breakdown||[]).forEach(b=>{if(!aggBreakdown[b.type])aggBreakdown[b.type]={type:b.type,label:b.label,value:0};aggBreakdown[b.type].value+=b.value;}));
             const breakdownList=Object.values(aggBreakdown).sort((a,b)=>b.value-a.value);
 
             const exportCSV=()=>{
               if(!agg)return;
-              const rows=[["Métrica","Valor"],["Período",periodLabels[repPeriod]||repPeriod],["Conta",repClient==="all"?"Todas":repClient],["Impressões",agg.impressoes.toLocaleString("pt-BR")],["Alcance",agg.alcance.toLocaleString("pt-BR")],["Cliques",agg.cliques.toLocaleString("pt-BR")],["CTR",agg.ctr+"%"],["CPC","R$"+agg.cpc],["Valor Investido","R$"+agg.investido.toFixed(2)],["Resultados",agg.conversoes],["Valor do Resultado","R$"+agg.valorResult.toFixed(2)],["ROAS",roas+"x"],["CPA","R$"+cpl],[],["DETALHAMENTO POR TIPO"],...breakdownList.map(b=>[b.label,b.value]),[],["DETALHAMENTO POR CONTA"],["Conta","Impressões","Alcance","CTR","CPC","Investido","Resultados","Valor"],...(rd||[]).map(d=>[d.client,d.impressoes,d.alcance,d.ctr+"%","R$"+d.cpc,"R$"+d.investido,d.conversoes,"R$"+d.valorResult])];
-              const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+rows.map(r=>r.join(",")).join("\n")],{type:"text/csv;charset=utf-8;"}));a.download=`relatorio_${repPeriod}.csv`;a.click();
+              const rows=[["Conta",repClient==="all"?"Todas":repClient],["Período",periodLabels[repPeriod]],["Investido","R$"+agg.investido.toFixed(2)],["Resultados",agg.conversoes],["ROAS",roas+"x"],["CPA","R$"+cpa],["CTR",agg.ctr+"%"],["CPC","R$"+agg.cpc],["Impressões",agg.impressoes],["Alcance",agg.alcance],[],["TIPO DE RESULTADO","QUANTIDADE"],...breakdownList.map(b=>[b.label,b.value]),[],["CONTA","INVESTIDO","RESULTADOS","CPA","ROAS","CTR","CPC"],...rd.map(d=>{const r=parseFloat(d.investido)>0?(parseFloat(d.valorResult)/parseFloat(d.investido)).toFixed(2):"0";return[d.client,"R$"+d.investido,d.conversoes,d.conversoes>0?"R$"+(parseFloat(d.investido)/d.conversoes).toFixed(2):"–",r+"x",d.ctr+"%","R$"+d.cpc];})];
+              const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\uFEFF"+rows.map(r=>r.join(",")).join("\n")],{type:"text/csv;charset=utf-8;"}));a.download=`relatorio_${repClient}_${repPeriod}.csv`;a.click();
             };
 
+            const roasColor=parseFloat(roas)>=4?T.ok:parseFloat(roas)>=2.5?T.warn:parseFloat(roas)>0?T.err:T.mute;
+            const roasLabel=parseFloat(roas)>=4?"🔥 Excelente":parseFloat(roas)>=2.5?"⚡ Bom":parseFloat(roas)>0?"⚠ Otimizar":"—";
+
             return(
-              <div>
-                {/* ── HERO HEADER: account + period in one clean bar ── */}
-                <div className="card" style={{background:`linear-gradient(135deg, rgba(0,129,251,.06), rgba(99,102,241,.04))`,borderRadius:14,border:`1px solid ${T.borderMid}`,padding:isMobile?"16px":"18px 22px",marginBottom:14}}>
-                  <div style={{display:"flex",gap:12,alignItems:isMobile?"stretch":"flex-end",flexDirection:isMobile?"column":"row"}}>
-                    {/* Account select */}
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:9,color:T.mute,letterSpacing:".1em",marginBottom:6,fontWeight:600}}>CONTA DE ANÚNCIO</div>
-                      <select value={repClient} onChange={e=>setRepClient(e.target.value)} style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${T.borderMid}`,borderRadius:9,padding:"10px 14px",color:T.txt,fontSize:13,fontFamily:T.font,cursor:"pointer"}}>
-                        <option value="all" style={{background:T.card}}>📊 Todas as contas ({metaAccounts.length})</option>
-                        {metaAccounts.map(a=>(<option key={a.id} value={a.name} style={{background:T.card}}>{a.name}</option>))}
-                      </select>
-                    </div>
-                    {/* Period select */}
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:9,color:T.mute,letterSpacing:".1em",marginBottom:6,fontWeight:600}}>PERÍODO</div>
-                      <select value={repPeriod} onChange={e=>setRepPeriod(e.target.value)} style={{width:"100%",background:"rgba(255,255,255,.05)",border:`1px solid ${T.borderMid}`,borderRadius:9,padding:"10px 14px",color:T.txt,fontSize:13,fontFamily:T.font,cursor:"pointer"}}>
-                        <option value="7d" style={{background:T.card}}>📅 Últimos 7 dias</option>
-                        <option value="14d" style={{background:T.card}}>📅 Últimos 14 dias</option>
-                        <option value="30d" style={{background:T.card}}>📅 Últimos 30 dias</option>
-                        <option value="90d" style={{background:T.card}}>📅 Últimos 90 dias</option>
-                        <option value="this_month" style={{background:T.card}}>📅 Este mês</option>
-                        <option value="last_month" style={{background:T.card}}>📅 Mês passado</option>
-                      </select>
-                    </div>
-                    {/* Action buttons */}
-                    <div style={{display:"flex",gap:8,flexShrink:0}}>
-                      <button className="btn-p" onClick={fetchRepData} disabled={repLoading||metaStatus!=="connected"} style={{padding:"10px 18px",borderRadius:9,border:"none",background:metaStatus==="connected"?T.meta:"rgba(0,129,251,.3)",color:"#fff",cursor:metaStatus==="connected"&&!repLoading?"pointer":"not-allowed",fontSize:12,fontWeight:600,fontFamily:T.font,display:"flex",alignItems:"center",gap:7,whiteSpace:"nowrap",opacity:repLoading?.7:1}}>
-                        {repLoading?<><span style={{width:12,height:12,border:"2px solid rgba(255,255,255,.3)",borderTop:"2px solid #fff",borderRadius:"50%",animation:"spin .7s linear infinite",display:"inline-block"}}></span>Buscando...</>:<><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M11.5 7A4.5 4.5 0 1 1 7 2.5a4.5 4.5 0 0 1 3.18 1.32L11.5 5" stroke="white" strokeWidth="1.4" strokeLinecap="round"/><path d="M11.5 1.5v3.5h-3.5" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>Gerar relatório</>}
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+                {/* ── FILTROS — conta + período ── */}
+                <div style={{background:T.card,borderRadius:16,border:`1px solid ${T.border}`,overflow:"visible"}}>
+                  <div style={{padding:"13px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M3.5 7h7M6 11h2" stroke={T.meta} strokeWidth="1.4" strokeLinecap="round"/></svg>
+                    <span style={{fontSize:12,fontWeight:600,color:T.txt}}>Filtros do relatório</span>
+                    {agg&&<span style={{marginLeft:"auto",fontSize:10,color:T.ok,background:"rgba(34,197,94,.1)",border:"1px solid rgba(34,197,94,.2)",borderRadius:20,padding:"2px 10px",fontWeight:500}}>● Dados carregados</span>}
+                  </div>
+                  <div style={{padding:"16px 20px",display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+
+                    {/* Conta — dropdown customizado */}
+                    <div style={{flex:"1 1 200px",minWidth:160,position:"relative"}}>
+                      <div style={{fontSize:9,color:T.mute,letterSpacing:".1em",fontWeight:600,marginBottom:6}}>CONTA DE ANÚNCIO</div>
+                      <button onClick={()=>{setRepShowAccounts(!repShowAccounts);setRepShowPicker(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:10,border:`1px solid ${repShowAccounts?T.meta+"66":T.borderMid}`,background:repShowAccounts?"rgba(0,129,251,.06)":"rgba(255,255,255,.04)",color:T.txt,cursor:"pointer",fontFamily:T.font,fontSize:13,transition:"all .15s"}}>
+                        <span style={{width:22,height:22,borderRadius:6,background:"rgba(0,129,251,.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:T.meta,flexShrink:0}}>{repClient==="all"?"★":repClient.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</span>
+                        <span style={{flex:1,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{repClient==="all"?`Todas as contas (${metaAccounts.length})`:repClient}</span>
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{flexShrink:0,transform:repShowAccounts?"rotate(180deg)":"none",transition:"transform .2s"}}><path d="M2 4.5l4 4 4-4" stroke={T.mute} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
                       </button>
-                      {agg&&<button onClick={exportCSV} title="Exportar CSV" style={{padding:"10px 14px",borderRadius:9,border:`1px solid ${T.borderMid}`,background:"rgba(255,255,255,.04)",color:T.txt,cursor:"pointer",fontSize:12,fontFamily:T.font,display:"flex",alignItems:"center",gap:5}}>
-                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1v9M3.5 6.5L7 10l3.5-3.5M2 12h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        CSV
+                      {repShowAccounts&&(
+                        <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:200,background:"#131825",border:`1px solid ${T.borderMid}`,borderRadius:12,overflow:"hidden",boxShadow:"0 16px 40px rgba(0,0,0,.5)"}}>
+                          {[{id:"all",name:`Todas as contas (${metaAccounts.length})`},...metaAccounts].map(a=>{
+                            const sel=repClient===(a.id==="all"?"all":a.name);
+                            return(
+                              <div key={a.id} onClick={()=>{setRepClient(a.id==="all"?"all":a.name);setRepShowAccounts(false);}} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",cursor:"pointer",background:sel?"rgba(0,129,251,.08)":"transparent"}} onMouseEnter={e=>!sel&&(e.currentTarget.style.background="rgba(255,255,255,.04)")} onMouseLeave={e=>!sel&&(e.currentTarget.style.background=sel?"rgba(0,129,251,.08)":"transparent")}>
+                                <span style={{width:24,height:24,borderRadius:7,background:sel?"rgba(0,129,251,.2)":"rgba(255,255,255,.06)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:sel?T.meta:T.mute,flexShrink:0}}>{a.id==="all"?"★":a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</span>
+                                <span style={{fontSize:12,color:sel?T.txt:T.sub,flex:1}}>{a.name}</span>
+                                {sel&&<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke={T.meta} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Período — Meta Ads style */}
+                    <div style={{flex:"1 1 220px",position:"relative"}}>
+                      <div style={{fontSize:9,color:T.mute,letterSpacing:".1em",fontWeight:600,marginBottom:6}}>PERÍODO</div>
+                      <button onClick={()=>{setRepShowPicker(!repShowPicker);setRepShowAccounts(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderRadius:10,border:`1px solid ${repShowPicker?T.meta+"66":T.borderMid}`,background:repShowPicker?"rgba(0,129,251,.06)":"rgba(255,255,255,.04)",color:T.txt,cursor:"pointer",fontFamily:T.font,fontSize:13,transition:"all .15s"}}>
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="11" rx="2" stroke={T.meta} strokeWidth="1.2"/><path d="M1 5.5h12" stroke={T.meta} strokeWidth="1.2"/><path d="M4 1v3M10 1v3" stroke={T.meta} strokeWidth="1.2" strokeLinecap="round"/></svg>
+                        <span style={{flex:1,textAlign:"left",color:T.meta,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{repActivePeriodLabel}</span>
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{flexShrink:0,transform:repShowPicker?"rotate(180deg)":"none",transition:"transform .2s"}}><path d="M2 4.5l4 4 4-4" stroke={T.mute} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      </button>
+                      {repShowPicker&&(
+                        <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:200,background:"#131825",border:`1px solid ${T.borderMid}`,borderRadius:14,boxShadow:"0 20px 60px rgba(0,0,0,.7)",display:"flex",minWidth:560}}>
+                          <div style={{width:170,borderRight:`1px solid ${T.border}`,padding:"10px 0",flexShrink:0}}>
+                            <div style={{fontSize:9,color:T.mute,letterSpacing:".09em",padding:"0 14px 8px",fontWeight:600}}>USADOS RECENTEMENTE</div>
+                            {repPresets.map(p=>{const sel=repPeriod===p.v;return(
+                              <div key={p.v} onClick={()=>{setRepPeriod(p.v);setRepCustomRange({start:null,end:null,selecting:false});setRepShowPicker(false);}} style={{padding:"8px 14px",fontSize:12,color:sel?T.txt:T.sub,cursor:"pointer",background:sel?"rgba(255,255,255,.06)":"transparent",display:"flex",alignItems:"center",gap:8}} onMouseEnter={e=>!sel&&(e.currentTarget.style.background="rgba(255,255,255,.04)")} onMouseLeave={e=>!sel&&(e.currentTarget.style.background=sel?"rgba(255,255,255,.06)":"transparent")}>
+                                <span style={{width:7,height:7,borderRadius:"50%",background:sel?"#0081FB":"transparent",flexShrink:0,border:sel?"none":`1px solid ${T.border}`}}></span>{p.l}
+                              </div>
+                            );})}
+                          </div>
+                          <div style={{flex:1,padding:16,minWidth:0}}>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                              <button onClick={()=>{if(repCalMonth===0){setRepCalMonth(11);setRepCalYear(y=>y-1);}else setRepCalMonth(m=>m-1);}} style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,lineHeight:1,padding:"2px 8px"}}>‹</button>
+                              <div style={{fontSize:11,color:T.mute,fontWeight:500}}>{repCustomRange.start&&repCustomRange.end?`${repCustomRange.start} → ${repCustomRange.end}`:repCustomRange.start?"Selecione a data final":"Selecione o período"}</div>
+                              <button onClick={()=>{if(repCalMonth===11){setRepCalMonth(0);setRepCalYear(y=>y+1);}else setRepCalMonth(m=>m+1);}} style={{background:"none",border:"none",color:T.sub,cursor:"pointer",fontSize:18,lineHeight:1,padding:"2px 8px"}}>›</button>
+                            </div>
+                            <div style={{display:"flex",gap:20}}>{repRenderCal(repCalYear,repCalMonth)}{repRenderCal(repRightYear,repRightMonth)}</div>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:14,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+                              <span style={{fontSize:10,color:T.mute}}>Fuso: Horário de Brasília</span>
+                              <div style={{display:"flex",gap:8}}>
+                                <button onClick={()=>{setRepShowPicker(false);setRepCustomRange({start:null,end:null,selecting:false});}} style={{padding:"7px 14px",borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.sub,fontSize:11,cursor:"pointer",fontFamily:T.font}}>Cancelar</button>
+                                <button onClick={()=>{if(repCustomRange.start&&repCustomRange.end){setRepPeriod("custom");setRepShowPicker(false);}}} disabled={!repCustomRange.start||!repCustomRange.end} style={{padding:"7px 14px",borderRadius:8,border:"none",background:repCustomRange.start&&repCustomRange.end?"#0081FB":"rgba(0,129,251,.3)",color:"#fff",fontSize:11,fontWeight:600,cursor:repCustomRange.start&&repCustomRange.end?"pointer":"not-allowed",fontFamily:T.font}}>Atualizar</button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{display:"flex",gap:8,flexShrink:0}}>
+                      <button onClick={fetchRepData} disabled={repLoading||metaStatus!=="connected"} style={{padding:"10px 20px",borderRadius:10,border:"none",background:metaStatus==="connected"?T.meta:"rgba(0,129,251,.3)",color:"#fff",cursor:metaStatus==="connected"&&!repLoading?"pointer":"not-allowed",fontSize:12,fontWeight:600,fontFamily:T.font,display:"flex",alignItems:"center",gap:8,opacity:repLoading?.7:1,whiteSpace:"nowrap"}}>
+                        {repLoading?<><span style={{width:13,height:13,border:"2px solid rgba(255,255,255,.3)",borderTop:"2px solid #fff",borderRadius:"50%",animation:"spin .7s linear infinite",display:"inline-block",flexShrink:0}}></span>Buscando...</>:<><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M12 7A5 5 0 1 1 7 2a5 5 0 0 1 3.54 1.46L12 5" stroke="white" strokeWidth="1.4" strokeLinecap="round"/><path d="M12 1.5V5H8.5" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>Gerar relatório</>}
+                      </button>
+                      {agg&&<button onClick={exportCSV} style={{padding:"10px 14px",borderRadius:10,border:`1px solid ${T.border}`,background:"rgba(255,255,255,.04)",color:T.sub,cursor:"pointer",fontFamily:T.font,display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1.5v8M3.5 6.5L7 10l3.5-3.5M2 12.5h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>CSV
                       </button>}
                     </div>
                   </div>
+                  {metaStatus!=="connected"&&<div style={{margin:"0 20px 14px",padding:"10px 14px",background:"rgba(99,102,241,.07)",border:`1px solid rgba(99,102,241,.2)`,borderRadius:10,fontSize:12,color:T.sub,display:"flex",alignItems:"center",gap:8}}>
+                    <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke={T.accent} strokeWidth="1.2"/><path d="M7 6v4M7 4.5v-.5" stroke={T.accent} strokeWidth="1.3" strokeLinecap="round"/></svg>
+                    Conecte o Business Manager na aba <button onClick={()=>setView("connections")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontFamily:T.font,padding:0,fontWeight:500}}>Conexões →</button>
+                  </div>}
+                  {repError&&<div style={{margin:"0 20px 14px",padding:"10px 14px",background:"rgba(239,68,68,.07)",border:"1px solid rgba(239,68,68,.2)",borderRadius:10,fontSize:12,color:T.err,display:"flex",alignItems:"center",gap:8}}>⚠ {repError}</div>}
                 </div>
 
-                {/* ── States ── */}
-                {repError&&<div style={{background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",borderRadius:10,padding:"12px 16px",fontSize:12,color:T.err,marginBottom:14,display:"flex",alignItems:"center",gap:8}}>⚠ {repError}</div>}
-
-                {!agg&&!repLoading&&!repError&&(
-                  <div className="card" style={{background:T.card,borderRadius:14,border:`1px dashed ${T.borderMid}`,padding:"60px 20px",textAlign:"center"}}>
-                    <div style={{fontSize:40,marginBottom:14}}>📊</div>
-                    <div style={{fontSize:15,fontWeight:600,color:T.txt,marginBottom:6}}>Pronto para gerar seu relatório</div>
-                    <div style={{fontSize:12,color:T.mute,maxWidth:340,margin:"0 auto",lineHeight:1.7,marginBottom:18}}>Selecione a conta e o período acima e clique em <strong style={{color:T.txt}}>Gerar relatório</strong> para ver as métricas reais.</div>
-                    {metaStatus!=="connected"&&<button className="btn-p" onClick={()=>setView("connections")} style={{padding:"10px 22px",borderRadius:10,border:"none",background:T.accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:T.font}}>Conectar Business Manager →</button>}
+                {/* ── EMPTY STATE ── */}
+                {!agg&&!repLoading&&(
+                  <div style={{background:T.card,borderRadius:16,border:`1px dashed ${T.borderMid}`,padding:"64px 24px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+                    <div style={{width:56,height:56,borderRadius:16,background:"rgba(0,129,251,.08)",border:"1px solid rgba(0,129,251,.15)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:4}}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M3 22V12h4v10M9 22V6h4v16M15 22v-6h4v6" stroke={T.meta} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </div>
+                    <div style={{fontSize:16,fontWeight:600,color:T.txt}}>Seu relatório vai aparecer aqui</div>
+                    <div style={{fontSize:13,color:T.mute,maxWidth:320,lineHeight:1.7}}>Selecione a conta e o período acima e clique em Gerar relatório para ver as métricas da Meta Ads.</div>
                   </div>
                 )}
 
-                {/* ── REPORT VIEW ── */}
+                {/* ── RELATÓRIO ── */}
                 {agg&&(
-                  <div>
-                    {/* Account header */}
-                    <div className="card" style={{background:T.card,borderRadius:12,border:`1px solid ${T.border}`,padding:"14px 18px",marginBottom:14,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                      <div style={{width:42,height:42,borderRadius:11,background:"rgba(0,129,251,.12)",border:"1px solid rgba(0,129,251,.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:T.meta,flexShrink:0}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+                    {/* Cabeçalho do relatório */}
+                    <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 18px",background:"rgba(0,129,251,.06)",borderRadius:12,border:"1px solid rgba(0,129,251,.15)"}}>
+                      <div style={{width:38,height:38,borderRadius:10,background:"rgba(0,129,251,.14)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:T.meta,flexShrink:0}}>
                         {repClient==="all"?"📊":repClient.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
                       </div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:15,fontWeight:600,color:T.txt,marginBottom:2}}>{repClient==="all"?"Visão consolidada":repClient}</div>
-                        <div style={{fontSize:11,color:T.mute,display:"flex",gap:10,flexWrap:"wrap"}}>
-                          <span>📅 {periodLabels[repPeriod]}</span>
-                          <span>•</span>
-                          <span>{rd.length} conta{rd.length>1?"s":""}</span>
-                          <span>•</span>
-                          <span style={{color:T.ok}}>● Dados reais Meta API</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:14,fontWeight:600,color:T.txt}}>{repClient==="all"?"Todas as contas":repClient}</div>
+                        <div style={{fontSize:11,color:T.mute,marginTop:2,display:"flex",gap:10}}>
+                          <span>📅 Últimos {periodLabels[repPeriod]}</span>
+                          <span>·</span>
+                          <span>{rd.length} conta{rd.length>1?"s":""} analisada{rd.length>1?"s":""}</span>
+                          <span>·</span>
+                          <span style={{color:T.ok}}>● Meta Ads</span>
                         </div>
                       </div>
+                      <div style={{fontSize:11,color:T.mute,flexShrink:0}}>{new Date().toLocaleDateString("pt-BR",{day:"2-digit",month:"short",year:"numeric"})}</div>
                     </div>
 
-                    {/* HERO METRICS — primary 4 */}
-                    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:isMobile?10:12,marginBottom:12}}>
+                    {/* ── MÉTRICAS PRINCIPAIS ── 4 cards grandes */}
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10}}>
                       {[
-                        {l:"Investido",v:`R$ ${agg.investido.toLocaleString("pt-BR",{minimumFractionDigits:2})}`,sub:"valor gasto",c:T.accent,big:true},
-                        {l:"Resultados",v:agg.conversoes.toLocaleString("pt-BR"),sub:rd[0]?.primaryType?(actionLabels[rd[0].primaryType]||rd[0].primaryType):"conversões",c:T.ok,big:true},
-                        {l:"Custo por Resultado",v:`R$ ${cpl}`,sub:"CPA / CPL",c:"#a78bfa",big:true},
-                        {l:"ROAS",v:`${roas}x`,sub:`R$ ${agg.valorResult.toLocaleString("pt-BR")} retorno`,c:parseFloat(roas)>=2.5?T.ok:T.warn,big:true},
+                        {label:"Investido",value:`R$ ${agg.investido.toLocaleString("pt-BR",{minimumFractionDigits:2})}`,sub:"valor total gasto",color:T.accent,icon:<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5v13M11 4H6.5a2.5 2.5 0 0 0 0 5h3a2.5 2.5 0 0 1 0 5H4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>},
+                        {label:"Resultados",value:agg.conversoes.toLocaleString("pt-BR"),sub:rd[0]?.primaryType?actionLabels[rd[0].primaryType]||"conversões":"conversões",color:T.ok,icon:<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 10l4-4 3 3 5-6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>},
+                        {label:"ROAS",value:`${roas}x`,sub:roasLabel,color:roasColor,icon:<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3"/><path d="M8 5v3l2 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>},
+                        {label:"Custo por Resultado",value:`R$ ${cpa}`,sub:"CPA médio",color:"#a78bfa",icon:<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 14l4-8 4 4 4-10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>},
                       ].map((m,i)=>(
-                        <div key={i} className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:isMobile?"14px 16px":"18px 22px",position:"relative",overflow:"hidden"}}>
-                          <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:m.c}}></div>
-                          <div style={{fontSize:10,color:T.mute,letterSpacing:".1em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>{m.l}</div>
-                          <div style={{fontFamily:T.mono,fontSize:isMobile?20:26,color:T.txt,fontWeight:500,letterSpacing:"-.01em",marginBottom:5}}>{m.v}</div>
+                        <div key={i} style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
+                          <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:m.color,borderRadius:"14px 14px 0 0"}}></div>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                            <div style={{fontSize:10,color:T.mute,letterSpacing:".1em",fontWeight:600,textTransform:"uppercase"}}>{m.label}</div>
+                            <div style={{width:28,height:28,borderRadius:8,background:`${m.color}18`,display:"flex",alignItems:"center",justifyContent:"center",color:m.color,flexShrink:0}}>{m.icon}</div>
+                          </div>
+                          <div style={{fontFamily:T.mono,fontSize:isMobile?18:24,color:T.txt,fontWeight:500,marginBottom:6,letterSpacing:"-.01em"}}>{m.value}</div>
                           <div style={{fontSize:11,color:T.mute}}>{m.sub}</div>
                         </div>
                       ))}
                     </div>
 
-                    {/* SECONDARY METRICS — 4 smaller */}
-                    <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
-                      {[
-                        {l:"Impressões",v:agg.impressoes.toLocaleString("pt-BR"),c:"#a78bfa"},
-                        {l:"Alcance",v:agg.alcance.toLocaleString("pt-BR"),c:"#60a5fa"},
-                        {l:"CTR",v:`${agg.ctr}%`,c:parseFloat(agg.ctr)<1?T.warn:T.ok},
-                        {l:"CPC",v:`R$ ${agg.cpc}`,c:T.sub},
-                      ].map((m,i)=>(
-                        <div key={i} className="card" style={{background:"rgba(255,255,255,.02)",borderRadius:11,border:`1px solid ${T.border}`,padding:"12px 16px"}}>
-                          <div style={{fontSize:9,color:T.mute,letterSpacing:".09em",textTransform:"uppercase",marginBottom:5,fontWeight:500}}>{m.l}</div>
-                          <div style={{fontFamily:T.mono,fontSize:16,color:m.c,fontWeight:500}}>{m.v}</div>
-                        </div>
-                      ))}
+                    {/* ── MÉTRICAS SECUNDÁRIAS ── barra de dados */}
+                    <div style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"14px 20px"}}>
+                      <div style={{fontSize:10,color:T.mute,letterSpacing:".1em",fontWeight:600,marginBottom:12}}>DESEMPENHO DE ENTREGA</div>
+                      <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:0}}>
+                        {[
+                          {l:"Impressões",v:agg.impressoes.toLocaleString("pt-BR"),c:"#a78bfa"},
+                          {l:"Alcance",v:agg.alcance.toLocaleString("pt-BR"),c:"#60a5fa"},
+                          {l:"CTR",v:`${agg.ctr}%`,c:parseFloat(agg.ctr)>=1?T.ok:T.warn,warn:parseFloat(agg.ctr)<1},
+                          {l:"CPC",v:`R$ ${parseFloat(agg.cpc).toLocaleString("pt-BR",{minimumFractionDigits:2})}`,c:T.sub},
+                        ].map((m,i,arr)=>(
+                          <div key={i} style={{padding:"8px 16px",borderRight:i<arr.length-1?`1px solid ${T.border}`:"none",borderLeft:i===0?"none":"",textAlign:"center"}}>
+                            <div style={{fontSize:9,color:T.mute,letterSpacing:".08em",marginBottom:5}}>{m.l}</div>
+                            <div style={{fontFamily:T.mono,fontSize:16,fontWeight:500,color:m.c}}>{m.v}</div>
+                            {m.warn&&<div style={{fontSize:9,color:T.warn,marginTop:3}}>⚠ abaixo de 1%</div>}
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
-                    {/* BREAKDOWN — all action types */}
+                    {/* ── BREAKDOWN DE CONVERSÕES ── */}
                     {breakdownList.length>0&&(
-                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 22px",marginBottom:14}}>
-                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-                          <div style={{width:28,height:28,borderRadius:7,background:"rgba(34,197,94,.12)",display:"flex",alignItems:"center",justifyContent:"center"}}>🎯</div>
-                          <div>
-                            <div style={{fontSize:13,fontWeight:600,color:T.txt}}>Detalhamento de conversões</div>
-                            <div style={{fontSize:10,color:T.mute}}>Todos os tipos de ação capturados pelo pixel</div>
+                      <div style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+                        <div style={{padding:"14px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
+                          <div style={{width:28,height:28,borderRadius:8,background:"rgba(34,197,94,.1)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5l1.5 3.5H13l-3.5 2.5 1.5 4L7 9l-4 2.5 1.5-4L1 5h4.5L7 1.5z" stroke={T.ok} strokeWidth="1.2" strokeLinejoin="round"/></svg>
                           </div>
+                          <div>
+                            <div style={{fontSize:12,fontWeight:600,color:T.txt}}>Detalhamento por tipo de resultado</div>
+                            <div style={{fontSize:10,color:T.mute}}>{breakdownList.length} tipo{breakdownList.length>1?"s":""} detectado{breakdownList.length>1?"s":""}</div>
+                          </div>
+                          <div style={{marginLeft:"auto",fontFamily:T.mono,fontSize:13,fontWeight:600,color:T.ok}}>{agg.conversoes.toLocaleString("pt-BR")} total</div>
                         </div>
-                        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>
-                          {breakdownList.map((b,i)=>(
-                            <div key={i} style={{background:"rgba(255,255,255,.02)",borderRadius:9,border:`1px solid ${T.border}`,padding:"10px 12px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                              <div style={{minWidth:0,flex:1}}>
-                                <div style={{fontSize:10,color:T.mute,marginBottom:2}}>{b.label}</div>
-                                <div style={{fontSize:9,color:T.mute,fontFamily:T.mono,opacity:.6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.type}</div>
+                        <div style={{padding:"4px 0"}}>
+                          {breakdownList.map((b,i)=>{
+                            const pct=agg.conversoes>0?Math.round((b.value/agg.conversoes)*100):0;
+                            return(
+                              <div key={i} style={{padding:"12px 20px",borderBottom:i<breakdownList.length-1?`1px solid ${T.border}`:"none",display:"flex",alignItems:"center",gap:14}}>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12,fontWeight:500,color:T.txt,marginBottom:3}}>{b.label}</div>
+                                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                    <div style={{flex:1,background:"rgba(255,255,255,.06)",borderRadius:100,height:4,overflow:"hidden"}}>
+                                      <div style={{background:i===0?T.ok:"rgba(34,197,94,.4)",width:`${pct}%`,height:"100%",borderRadius:100}}></div>
+                                    </div>
+                                    <span style={{fontSize:10,color:T.mute,flexShrink:0}}>{pct}%</span>
+                                  </div>
+                                </div>
+                                <div style={{textAlign:"right",flexShrink:0}}>
+                                  <div style={{fontFamily:T.mono,fontSize:16,fontWeight:600,color:i===0?T.ok:T.sub}}>{b.value.toLocaleString("pt-BR")}</div>
+                                  {i===0&&<div style={{fontSize:9,color:T.ok,fontWeight:500}}>PRINCIPAL</div>}
+                                </div>
                               </div>
-                              <div style={{fontFamily:T.mono,fontSize:15,fontWeight:600,color:T.ok,flexShrink:0}}>{b.value.toLocaleString("pt-BR")}</div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
 
-                    {/* PERFORMANCE INSIGHTS */}
-                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:14}}>
-                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 20px"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                          <div style={{width:42,height:42,borderRadius:11,background:parseFloat(roas)>=3?"rgba(34,197,94,.12)":parseFloat(roas)>=2?"rgba(245,158,11,.12)":"rgba(239,68,68,.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:parseFloat(roas)>=3?T.ok:parseFloat(roas)>=2?T.warn:T.err,flexShrink:0,fontFamily:T.mono}}>{roas}x</div>
-                          <div><div style={{fontSize:9,color:T.mute,letterSpacing:".09em",textTransform:"uppercase",fontWeight:500,marginBottom:2}}>ROAS</div><div style={{fontSize:13,fontWeight:600,color:T.txt}}>Retorno sobre investimento</div></div>
+                    {/* ── INSIGHTS DE PERFORMANCE ── */}
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
+                      <div style={{background:T.card,borderRadius:14,border:`1px solid ${roasColor==="rgba(34,197,94,1)"||roasColor===T.ok?"rgba(34,197,94,.2)":roasColor===T.warn?"rgba(245,158,11,.2)":"rgba(239,68,68,.2)"}`,padding:"18px 20px"}}>
+                        <div style={{fontSize:10,color:T.mute,letterSpacing:".1em",fontWeight:600,marginBottom:10}}>ANÁLISE DE ROAS</div>
+                        <div style={{display:"flex",alignItems:"flex-end",gap:6,marginBottom:10}}>
+                          <span style={{fontFamily:T.mono,fontSize:36,fontWeight:500,color:roasColor,lineHeight:1}}>{roas}</span>
+                          <span style={{fontSize:14,color:T.mute,marginBottom:4}}>x</span>
                         </div>
-                        <div style={{fontSize:12,color:T.sub,lineHeight:1.6,marginBottom:8}}>Para cada <span style={{color:T.txt,fontWeight:500}}>R$ 1,00</span> investido, gerou <span style={{color:parseFloat(roas)>=3?T.ok:parseFloat(roas)>=2?T.warn:T.err,fontWeight:600}}>R$ {roas}</span> em valor.</div>
-                        {parseFloat(roas)>=4?<span className="tag" style={{background:"rgba(34,197,94,.1)",color:T.ok}}>🔥 Excelente</span>:parseFloat(roas)>=2.5?<span className="tag" style={{background:"rgba(245,158,11,.1)",color:T.warn}}>⚡ Bom</span>:parseFloat(roas)>0?<span className="tag" style={{background:"rgba(239,68,68,.1)",color:T.err}}>⚠ Otimizar</span>:<span className="tag" style={{background:"rgba(71,85,105,.15)",color:T.mute}}>Sem valor de conversão</span>}
+                        <div style={{fontSize:12,color:T.sub,lineHeight:1.65,marginBottom:10}}>Para cada <strong style={{color:T.txt}}>R$ 1,00</strong> investido, o retorno foi de <strong style={{color:roasColor}}>R$ {roas}</strong> em valor de conversão.</div>
+                        <div style={{display:"flex",gap:2}}>
+                          {[{l:"< 2",active:parseFloat(roas)<2,c:T.err},{l:"2–3",active:parseFloat(roas)>=2&&parseFloat(roas)<3,c:T.warn},{l:"3–4",active:parseFloat(roas)>=3&&parseFloat(roas)<4,c:"#60a5fa"},{l:"> 4",active:parseFloat(roas)>=4,c:T.ok}].map((s,i)=>(
+                            <div key={i} style={{flex:1,textAlign:"center",padding:"5px 4px",borderRadius:7,background:s.active?`${s.c}18`:"rgba(255,255,255,.03)",border:`1px solid ${s.active?s.c+"44":T.border}`}}>
+                              <div style={{fontSize:10,fontFamily:T.mono,color:s.active?s.c:T.mute,fontWeight:s.active?600:400}}>{s.l}</div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 20px"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                          <div style={{width:42,height:42,borderRadius:11,background:"rgba(96,165,250,.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#60a5fa",flexShrink:0,fontFamily:T.mono}}>R${cpl}</div>
-                          <div><div style={{fontSize:9,color:T.mute,letterSpacing:".09em",textTransform:"uppercase",fontWeight:500,marginBottom:2}}>CPA / CPL</div><div style={{fontSize:13,fontWeight:600,color:T.txt}}>Custo por aquisição</div></div>
+                      <div style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 20px"}}>
+                        <div style={{fontSize:10,color:T.mute,letterSpacing:".1em",fontWeight:600,marginBottom:10}}>EFICIÊNCIA DE CAPTAÇÃO</div>
+                        <div style={{display:"flex",alignItems:"flex-end",gap:6,marginBottom:10}}>
+                          <span style={{fontFamily:T.mono,fontSize:28,fontWeight:500,color:"#a78bfa",lineHeight:1}}>R$ {cpa}</span>
                         </div>
-                        <div style={{fontSize:12,color:T.sub,lineHeight:1.6}}>Cada conversão custou em média <span style={{color:"#60a5fa",fontWeight:600}}>R$ {cpl}</span> com <span style={{color:T.txt,fontWeight:500}}>{agg.conversoes} resultados</span> no período.</div>
+                        <div style={{fontSize:12,color:T.sub,lineHeight:1.65,marginBottom:12}}>Custo médio por resultado no período. <strong style={{color:T.txt}}>{agg.conversoes} resultados</strong> com investimento de <strong style={{color:T.txt}}>R$ {agg.investido.toLocaleString("pt-BR",{minimumFractionDigits:2})}</strong>.</div>
+                        <div style={{background:"rgba(255,255,255,.03)",borderRadius:9,padding:"10px 14px",display:"flex",justifyContent:"space-between"}}>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:9,color:T.mute,marginBottom:3}}>Cliques</div><div style={{fontFamily:T.mono,fontSize:13,color:T.txt}}>{agg.cliques.toLocaleString("pt-BR")}</div></div>
+                          <div style={{width:1,background:T.border}}></div>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:9,color:T.mute,marginBottom:3}}>CTR</div><div style={{fontFamily:T.mono,fontSize:13,color:parseFloat(agg.ctr)>=1?T.ok:T.warn}}>{agg.ctr}%</div></div>
+                          <div style={{width:1,background:T.border}}></div>
+                          <div style={{textAlign:"center"}}><div style={{fontSize:9,color:T.mute,marginBottom:3}}>CPC</div><div style={{fontFamily:T.mono,fontSize:13,color:T.sub}}>R$ {agg.cpc}</div></div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* PER ACCOUNT TABLE */}
+                    {/* ── TABELA POR CONTA ── */}
                     {rd.length>1&&(
-                      <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 22px"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-                          <div style={{fontSize:13,fontWeight:600,color:T.txt}}>Comparativo por conta</div>
-                          <span className="tag" style={{background:"rgba(99,102,241,.1)",color:T.accent}}>{rd.length} contas</span>
+                      <div style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+                        <div style={{padding:"14px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8}}>
+                          <div style={{fontSize:12,fontWeight:600,color:T.txt}}>Comparativo por conta</div>
+                          <span style={{fontSize:10,background:"rgba(99,102,241,.1)",color:T.accent,borderRadius:6,padding:"2px 8px",fontWeight:500}}>{rd.length} contas</span>
                         </div>
                         <div style={{overflowX:"auto"}}>
-                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
-                            <thead><tr>{["Conta","Investido","Resultados","CPA","ROAS","CTR","CPC"].map(h=>(<th key={h} style={{textAlign:"left",padding:"0 12px 10px 0",color:T.mute,fontWeight:600,fontSize:9,letterSpacing:".08em",textTransform:"uppercase"}}>{h}</th>))}</tr></thead>
-                            <tbody>{rd.map((d,i)=>{const acRoas=parseFloat(d.investido)>0?(parseFloat(d.valorResult)/parseFloat(d.investido)).toFixed(2):"0.00";const acCpl=d.conversoes>0?(parseFloat(d.investido)/d.conversoes).toFixed(2):"–";return(
-                              <tr key={i} className="rh" style={{borderTop:`1px solid ${T.border}`}}>
-                                <td style={{padding:"11px 12px 11px 0",fontWeight:500,color:T.txt}}>{d.client}</td>
-                                <td style={{padding:"11px 12px 11px 0",fontFamily:T.mono,color:T.accent,fontWeight:500}}>R$ {parseFloat(d.investido).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
-                                <td style={{padding:"11px 12px 11px 0",fontFamily:T.mono,color:T.ok,fontWeight:500}}>{d.conversoes}</td>
-                                <td style={{padding:"11px 12px 11px 0",fontFamily:T.mono,color:T.sub}}>R$ {acCpl}</td>
-                                <td style={{padding:"11px 12px 11px 0"}}><span style={{fontFamily:T.mono,fontSize:11,background:parseFloat(acRoas)<2?"rgba(239,68,68,.1)":parseFloat(acRoas)<3?"rgba(245,158,11,.1)":"rgba(34,197,94,.1)",color:parseFloat(acRoas)<2?T.err:parseFloat(acRoas)<3?T.warn:T.ok,borderRadius:5,padding:"2px 8px",fontWeight:600}}>{acRoas}x</span></td>
-                                <td style={{padding:"11px 12px 11px 0",fontFamily:T.mono,color:parseFloat(d.ctr)<1?T.warn:T.ok}}>{d.ctr}%</td>
-                                <td style={{padding:"11px 0",fontFamily:T.mono,color:T.sub}}>R$ {d.cpc}</td>
+                          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                            <thead>
+                              <tr style={{background:"rgba(255,255,255,.02)"}}>
+                                {["Conta","Investido","Resultados","CPA","ROAS","CTR","CPC"].map(h=>(
+                                  <th key={h} style={{textAlign:"left",padding:"10px 16px 10px 0",color:T.mute,fontWeight:600,fontSize:9,letterSpacing:".08em",textTransform:"uppercase",borderBottom:`1px solid ${T.border}`,paddingLeft:h==="Conta"?20:0}}>{h}</th>
+                                ))}
                               </tr>
-                            );})}
+                            </thead>
+                            <tbody>
+                              {rd.map((d,i)=>{
+                                const r=parseFloat(d.investido)>0?(parseFloat(d.valorResult)/parseFloat(d.investido)).toFixed(2):"0.00";
+                                const cp=d.conversoes>0?(parseFloat(d.investido)/d.conversoes).toFixed(2):"–";
+                                const rc=parseFloat(r)>=4?T.ok:parseFloat(r)>=2.5?T.warn:parseFloat(r)>0?T.err:T.mute;
+                                return(
+                                  <tr key={i} className="rh" style={{borderBottom:i<rd.length-1?`1px solid ${T.border}`:"none"}}>
+                                    <td style={{padding:"13px 0 13px 20px"}}><div style={{fontWeight:500,color:T.txt}}>{d.client}</div><div style={{fontSize:10,color:T.mute,marginTop:2}}>{d.impressoes.toLocaleString("pt-BR")} imp.</div></td>
+                                    <td style={{padding:"13px 16px 13px 0",fontFamily:T.mono,color:T.accent,fontWeight:500}}>R$ {parseFloat(d.investido).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
+                                    <td style={{padding:"13px 16px 13px 0",fontFamily:T.mono,fontWeight:600,color:T.ok}}>{d.conversoes}</td>
+                                    <td style={{padding:"13px 16px 13px 0",fontFamily:T.mono,color:T.sub}}>R$ {cp}</td>
+                                    <td style={{padding:"13px 16px 13px 0"}}><span style={{fontFamily:T.mono,fontSize:12,background:`${rc}18`,color:rc,borderRadius:6,padding:"3px 8px",fontWeight:600,border:`1px solid ${rc}30`}}>{r}x</span></td>
+                                    <td style={{padding:"13px 16px 13px 0",fontFamily:T.mono,color:parseFloat(d.ctr)<1?T.warn:T.ok}}>{d.ctr}%</td>
+                                    <td style={{padding:"13px 0",fontFamily:T.mono,color:T.sub}}>R$ {d.cpc}</td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
                       </div>
                     )}
+
                   </div>
                 )}
+
               </div>
             );
           })()}
