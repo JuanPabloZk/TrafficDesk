@@ -50915,11 +50915,16 @@ const IcoBudget = () => /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "
   /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M1 6h12", stroke: "currentColor", strokeWidth: "1.2" }),
   /* @__PURE__ */ jsxRuntimeExports.jsx("circle", { cx: "4.5", cy: "9", r: "1", fill: "currentColor" })
 ] });
+const IcoExport = () => /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", children: [
+  /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M7 1v8M3.5 5.5L7 9l3.5-3.5", stroke: "currentColor", strokeWidth: "1.2", strokeLinecap: "round", strokeLinejoin: "round" }),
+  /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M2 11v1a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1", stroke: "currentColor", strokeWidth: "1.2", strokeLinecap: "round" })
+] });
 const navItems = [
   { id: "dashboard", label: "Dashboard", Icon: IcoGrid },
   { id: "clients", label: "Clientes", Icon: IcoPpl },
   { id: "tasks", label: "Tarefas", Icon: IcoList },
   { id: "reports", label: "Relatórios", Icon: IcoChart },
+  { id: "export", label: "Exportar", Icon: IcoExport },
   { id: "whatsapp", label: "WhatsApp", Icon: IcoWA },
   { id: "budget", label: "Verba", Icon: IcoBudget },
   { id: "connections", label: "Conexões", Icon: IcoPlug }
@@ -50990,6 +50995,25 @@ function Dashboard() {
   const [newBudget, setNewBudget] = reactExports.useState({ name: "", accountId: "", currency: "BRL", limit: "", alertPct: 80, period: "monthly" });
   const [budgetAlerts, setBudgetAlerts] = reactExports.useState([]);
   const [budgetFilter, setBudgetFilter] = reactExports.useState("all");
+  const [exportConfig, setExportConfig] = reactExports.useState({
+    accountIds: [],
+    period: "this_month",
+    customRange: { start: null, end: null },
+    level: "account",
+    // account, campaign, adset
+    metrics: ["spend", "impressions", "clicks", "cpc", "conversions", "cpa"],
+    spreadsheetId: "",
+    sheetName: "Sheet1",
+    layout: "vertical",
+    // vertical (como o template) ou horizontal
+    startCell: "A1"
+  });
+  const [exportLoading, setExportLoading] = reactExports.useState(false);
+  const [exportLog, setExportLog] = reactExports.useState(null);
+  const [googleSheetsAuth, setGoogleSheetsAuth] = reactExports.useState(null);
+  const [exportShowPicker, setExportShowPicker] = reactExports.useState(false);
+  const [exportCalMonth, setExportCalMonth] = reactExports.useState((/* @__PURE__ */ new Date()).getMonth());
+  const [exportCalYear, setExportCalYear] = reactExports.useState((/* @__PURE__ */ new Date()).getFullYear());
   const [clientSettings, setClientSettings] = reactExports.useState({});
   const [repLoading, setRepLoading] = reactExports.useState(false);
   const [repData, setRepData] = reactExports.useState(null);
@@ -51979,7 +52003,7 @@ function Dashboard() {
           }) })
         ] }),
         view === "reports" && (() => {
-          var _a2, _b2;
+          var _a2;
           const repPeriodMap = { "7d": "last_7d", "14d": "last_14d", "30d": "last_30d", "90d": "last_90d", "this_month": "this_month", "last_month": "last_month" };
           const periodLabels = { "7d": "7 dias", "14d": "14 dias", "30d": "30 dias", "90d": "90 dias", "this_month": "Este mês", "last_month": "Mês passado" };
           const actionLabels = { "purchase": "Compras", "omni_purchase": "Compras (Omni)", "offsite_conversion.fb_pixel_purchase": "Compras (Pixel)", "lead": "Leads", "omni_lead": "Leads (Omni)", "offsite_conversion.fb_pixel_lead": "Leads (Pixel)", "onsite_conversion.lead_grouped": "Leads agrupados", "complete_registration": "Cadastros", "omni_complete_registration": "Cadastros (Omni)", "messaging_conversation_started_7d": "Conversas WhatsApp", "onsite_conversion.messaging_conversation_started_7d": "Conversas Messenger", "messaging_first_reply": "Primeira resposta", "onsite_conversion.purchase": "Compras (onsite)", "onsite_conversion.flow_complete": "Fluxos completos", "submit_application": "Aplicações", "schedule": "Agendamentos" };
@@ -52083,22 +52107,41 @@ function Dashboard() {
                 setRepLoading(false);
                 return;
               }
-              const results = await Promise.all(accs.map(async (acc) => {
-                var _a3, _b3;
-                let timeParam;
+              const calcPrevRange = () => {
+                const today = /* @__PURE__ */ new Date();
+                let start, end;
                 if (repPeriod === "custom" && repCustomRange.start && repCustomRange.end) {
-                  timeParam = `time_range={"since":"${repCustomRange.start}","until":"${repCustomRange.end}"}`;
+                  start = new Date(repCustomRange.start);
+                  end = new Date(repCustomRange.end);
                 } else {
-                  timeParam = `date_preset=${repPeriodMap[repPeriod] || repPeriod || "last_30d"}`;
+                  const map2 = { "7d": 7, "14d": 14, "30d": 30, "90d": 90, "this_month": today.getDate(), "last_month": 30 };
+                  const days = map2[repPeriod] || 30;
+                  end = new Date(today);
+                  end.setDate(end.getDate() - 1);
+                  start = new Date(end);
+                  start.setDate(start.getDate() - days + 1);
                 }
-                const res = await fetch(`${GRAPH}/act_${acc.id}/insights?fields=impressions,reach,clicks,ctr,cpc,spend,actions,action_values&${timeParam}&level=account&access_token=${savedToken}`);
+                const duration = Math.ceil((end - start) / (1e3 * 60 * 60 * 24)) + 1;
+                const prevEnd = new Date(start);
+                prevEnd.setDate(prevEnd.getDate() - 1);
+                const prevStart = new Date(prevEnd);
+                prevStart.setDate(prevStart.getDate() - duration + 1);
+                const fmt = (d2) => d2.toISOString().slice(0, 10);
+                return { prev_since: fmt(prevStart), prev_until: fmt(prevEnd), since: fmt(start), until: fmt(end), duration };
+              };
+              const ranges2 = calcPrevRange();
+              const fetchPeriod = async (acc, timeParam, withDaily = false) => {
+                var _a3, _b2;
+                const fields = "impressions,reach,clicks,ctr,cpc,spend,actions,action_values";
+                const url = `${GRAPH}/act_${acc.id}/insights?fields=${fields}&${timeParam}&level=account&access_token=${savedToken}`;
+                const res = await fetch(url);
                 const data = await res.json();
                 if (data.error || !((_a3 = data.data) == null ? void 0 : _a3[0])) return null;
                 const d2 = data.data[0];
                 const allConvs = (d2.actions || []).filter((a2) => conversionTypes.includes(a2.action_type));
                 let totalConv = 0, primaryType = null;
                 for (const t2 of primaryOrder) {
-                  const f2 = (_b3 = d2.actions) == null ? void 0 : _b3.find((a2) => a2.action_type === t2);
+                  const f2 = (_b2 = d2.actions) == null ? void 0 : _b2.find((a2) => a2.action_type === t2);
                   if (f2) {
                     totalConv = parseInt(f2.value) || 0;
                     primaryType = t2;
@@ -52107,7 +52150,59 @@ function Dashboard() {
                 }
                 if (!totalConv && allConvs.length) totalConv = allConvs.reduce((s2, a2) => s2 + (parseInt(a2.value) || 0), 0);
                 const convVal = (d2.action_values || []).find((a2) => valueTypes.includes(a2.action_type));
-                return { client: acc.name, accountId: acc.id, impressoes: parseInt(d2.impressions) || 0, alcance: parseInt(d2.reach) || 0, cliques: parseInt(d2.clicks) || 0, ctr: parseFloat(d2.ctr || 0).toFixed(2), cpc: parseFloat(d2.cpc || 0).toFixed(2), investido: parseFloat(d2.spend || 0).toFixed(2), conversoes: totalConv, valorResult: parseFloat((convVal == null ? void 0 : convVal.value) || 0).toFixed(2), primaryType, breakdown: allConvs.map((a2) => ({ type: a2.action_type, label: actionLabels[a2.action_type] || a2.action_type, value: parseInt(a2.value) || 0 })) };
+                let dailyData = [];
+                if (withDaily) {
+                  const dailyUrl = `${GRAPH}/act_${acc.id}/insights?fields=impressions,clicks,spend,actions,ctr&${timeParam}&level=account&time_increment=1&access_token=${savedToken}`;
+                  try {
+                    const dRes = await fetch(dailyUrl);
+                    const dData = await dRes.json();
+                    if (dData.data) {
+                      dailyData = dData.data.map((day) => {
+                        var _a4;
+                        let dayConv = 0;
+                        for (const t2 of primaryOrder) {
+                          const f2 = (_a4 = day.actions) == null ? void 0 : _a4.find((a2) => a2.action_type === t2);
+                          if (f2) {
+                            dayConv = parseInt(f2.value) || 0;
+                            break;
+                          }
+                        }
+                        return { date: day.date_start, spend: parseFloat(day.spend || 0), conv: dayConv, ctr: parseFloat(day.ctr || 0), imp: parseInt(day.impressions || 0), clicks: parseInt(day.clicks || 0) };
+                      });
+                    }
+                  } catch (e3) {
+                  }
+                }
+                return {
+                  client: acc.name,
+                  accountId: acc.id,
+                  impressoes: parseInt(d2.impressions) || 0,
+                  alcance: parseInt(d2.reach) || 0,
+                  cliques: parseInt(d2.clicks) || 0,
+                  ctr: parseFloat(d2.ctr || 0).toFixed(2),
+                  cpc: parseFloat(d2.cpc || 0).toFixed(2),
+                  investido: parseFloat(d2.spend || 0).toFixed(2),
+                  conversoes: totalConv,
+                  valorResult: parseFloat((convVal == null ? void 0 : convVal.value) || 0).toFixed(2),
+                  primaryType,
+                  breakdown: allConvs.map((a2) => ({ type: a2.action_type, label: actionLabels[a2.action_type] || a2.action_type, value: parseInt(a2.value) || 0 })),
+                  daily: dailyData
+                };
+              };
+              const results = await Promise.all(accs.map(async (acc) => {
+                let timeParam, prevTimeParam;
+                if (repPeriod === "custom" && repCustomRange.start && repCustomRange.end) {
+                  timeParam = `time_range={"since":"${repCustomRange.start}","until":"${repCustomRange.end}"}`;
+                } else {
+                  timeParam = `date_preset=${repPeriodMap[repPeriod] || repPeriod || "last_30d"}`;
+                }
+                prevTimeParam = `time_range={"since":"${ranges2.prev_since}","until":"${ranges2.prev_until}"}`;
+                const [current, previous] = await Promise.all([
+                  fetchPeriod(acc, timeParam, true),
+                  fetchPeriod(acc, prevTimeParam, false)
+                ]);
+                if (!current) return null;
+                return { ...current, previous };
               }));
               setRepData(results.filter(Boolean));
             } catch (e3) {
@@ -52275,208 +52370,568 @@ function Dashboard() {
               /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 16, fontWeight: 600, color: T.txt }, children: "Seu relatório vai aparecer aqui" }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 13, color: T.mute, maxWidth: 320, lineHeight: 1.7 }, children: "Selecione a conta e o período acima e clique em Gerar relatório para ver as métricas da Meta Ads." })
             ] }),
-            agg && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", background: "rgba(0,129,251,.06)", borderRadius: 12, border: "1px solid rgba(0,129,251,.15)" }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 38, height: 38, borderRadius: 10, background: "rgba(0,129,251,.14)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: T.meta, flexShrink: 0 }, children: repClient === "all" ? "📊" : repClient.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase() }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 14, fontWeight: 600, color: T.txt }, children: repClient === "all" ? "Todas as contas" : repClient }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 11, color: T.mute, marginTop: 2, display: "flex", gap: 10 }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
-                      "📅 Últimos ",
-                      periodLabels[repPeriod]
-                    ] }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "·" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
-                      rd2.length,
-                      " conta",
-                      rd2.length > 1 ? "s" : "",
-                      " analisada",
-                      rd2.length > 1 ? "s" : ""
-                    ] }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "·" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.ok }, children: "● Meta Ads" })
-                  ] })
-                ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.mute, flexShrink: 0 }, children: (/* @__PURE__ */ new Date()).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: 10 }, children: [
-                { label: "Investido", value: `R$ ${agg.investido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, sub: "valor total gasto", color: T.accent, icon: /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "16", height: "16", viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M8 1.5v13M11 4H6.5a2.5 2.5 0 0 0 0 5h3a2.5 2.5 0 0 1 0 5H4", stroke: "currentColor", strokeWidth: "1.3", strokeLinecap: "round" }) }) },
-                { label: "Resultados", value: agg.conversoes.toLocaleString("pt-BR"), sub: ((_b2 = rd2[0]) == null ? void 0 : _b2.primaryType) ? actionLabels[rd2[0].primaryType] || "conversões" : "conversões", color: T.ok, icon: /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "16", height: "16", viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M2 10l4-4 3 3 5-6", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round", strokeLinejoin: "round" }) }) },
-                { label: "ROAS", value: `${roas}x`, sub: roasLabel, color: roasColor, icon: /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "16", height: "16", viewBox: "0 0 16 16", fill: "none", children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("circle", { cx: "8", cy: "8", r: "6", stroke: "currentColor", strokeWidth: "1.3" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M8 5v3l2 2", stroke: "currentColor", strokeWidth: "1.3", strokeLinecap: "round" })
-                ] }) },
-                { label: "Custo por Resultado", value: `R$ ${cpa}`, sub: "CPA médio", color: "#a78bfa", icon: /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "16", height: "16", viewBox: "0 0 16 16", fill: "none", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M2 14l4-8 4 4 4-10", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round", strokeLinejoin: "round" }) }) }
-              ].map((m2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "18px 20px", position: "relative", overflow: "hidden" }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: 0, left: 0, right: 0, height: 3, background: m2.color, borderRadius: "14px 14px 0 0" } }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, letterSpacing: ".1em", fontWeight: 600, textTransform: "uppercase" }, children: m2.label }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 28, height: 28, borderRadius: 8, background: `${m2.color}18`, display: "flex", alignItems: "center", justifyContent: "center", color: m2.color, flexShrink: 0 }, children: m2.icon })
-                ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: isMobile ? 18 : 24, color: T.txt, fontWeight: 500, marginBottom: 6, letterSpacing: "-.01em" }, children: m2.value }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.mute }, children: m2.sub })
-              ] }, i)) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "14px 20px" }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, letterSpacing: ".1em", fontWeight: 600, marginBottom: 12 }, children: "DESEMPENHO DE ENTREGA" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 0 }, children: [
-                  { l: "Impressões", v: agg.impressoes.toLocaleString("pt-BR"), c: "#a78bfa" },
-                  { l: "Alcance", v: agg.alcance.toLocaleString("pt-BR"), c: "#60a5fa" },
-                  { l: "CTR", v: `${agg.ctr}%`, c: parseFloat(agg.ctr) >= 1 ? T.ok : T.warn, warn: parseFloat(agg.ctr) < 1 },
-                  { l: "CPC", v: `R$ ${parseFloat(agg.cpc).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, c: T.sub }
-                ].map((m2, i, arr) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "8px 16px", borderRight: i < arr.length - 1 ? `1px solid ${T.border}` : "none", borderLeft: i === 0 ? "none" : "", textAlign: "center" }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", marginBottom: 5 }, children: m2.l }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: 16, fontWeight: 500, color: m2.c }, children: m2.v }),
-                  m2.warn && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.warn, marginTop: 3 }, children: "⚠ abaixo de 1%" })
-                ] }, i)) })
-              ] }),
-              breakdownList.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, overflow: "hidden" }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 28, height: 28, borderRadius: 8, background: "rgba(34,197,94,.1)", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M7 1.5l1.5 3.5H13l-3.5 2.5 1.5 4L7 9l-4 2.5 1.5-4L1 5h4.5L7 1.5z", stroke: T.ok, strokeWidth: "1.2", strokeLinejoin: "round" }) }) }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Detalhamento por tipo de resultado" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 10, color: T.mute }, children: [
-                      breakdownList.length,
-                      " tipo",
-                      breakdownList.length > 1 ? "s" : "",
-                      " detectado",
-                      breakdownList.length > 1 ? "s" : ""
-                    ] })
-                  ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginLeft: "auto", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: T.ok }, children: [
-                    agg.conversoes.toLocaleString("pt-BR"),
-                    " total"
-                  ] })
-                ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "4px 0" }, children: breakdownList.map((b2, i) => {
-                  const pct = agg.conversoes > 0 ? Math.round(b2.value / agg.conversoes * 100) : 0;
-                  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "12px 20px", borderBottom: i < breakdownList.length - 1 ? `1px solid ${T.border}` : "none", display: "flex", alignItems: "center", gap: 14 }, children: [
+            agg && (() => {
+              var _a3;
+              const aggPrev = rd2.length && rd2[0].previous ? rd2.reduce((a2, d2) => {
+                const p2 = d2.previous || {};
+                return {
+                  impressoes: a2.impressoes + (p2.impressoes || 0),
+                  alcance: a2.alcance + (p2.alcance || 0),
+                  cliques: a2.cliques + (p2.cliques || 0),
+                  investido: a2.investido + parseFloat(p2.investido || 0),
+                  conversoes: a2.conversoes + (p2.conversoes || 0),
+                  valorResult: a2.valorResult + parseFloat(p2.valorResult || 0)
+                };
+              }, { impressoes: 0, alcance: 0, cliques: 0, investido: 0, conversoes: 0, valorResult: 0 }) : null;
+              const variation = (curr, prev) => {
+                if (!prev || prev === 0) return curr > 0 ? { val: 100, trend: "up", label: "novo" } : null;
+                const pct = (curr - prev) / prev * 100;
+                return { val: pct, trend: pct >= 0 ? "up" : "down", label: `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` };
+              };
+              const varInvestido = aggPrev ? variation(agg.investido, aggPrev.investido) : null;
+              const varConv = aggPrev ? variation(agg.conversoes, aggPrev.conversoes) : null;
+              const varRoas = aggPrev ? (() => {
+                const prevRoas = aggPrev.investido > 0 ? aggPrev.valorResult / aggPrev.investido : 0;
+                return variation(parseFloat(roas), prevRoas);
+              })() : null;
+              const varCpa = aggPrev ? (() => {
+                const prevCpa = aggPrev.conversoes > 0 ? aggPrev.investido / aggPrev.conversoes : 0;
+                return variation(parseFloat(cpa), prevCpa);
+              })() : null;
+              const allDaily = rd2.flatMap((d2) => (d2.daily || []).map((day) => ({ ...day, client: d2.client })));
+              const dailyByDate = {};
+              allDaily.forEach((d2) => {
+                if (!dailyByDate[d2.date]) dailyByDate[d2.date] = { date: d2.date, spend: 0, conv: 0, clicks: 0, imp: 0 };
+                dailyByDate[d2.date].spend += d2.spend;
+                dailyByDate[d2.date].conv += d2.conv;
+                dailyByDate[d2.date].clicks += d2.clicks;
+                dailyByDate[d2.date].imp += d2.imp;
+              });
+              const dailyAgg = Object.values(dailyByDate).sort((a2, b2) => a2.date.localeCompare(b2.date));
+              const detectTrend = (arr, key) => {
+                if (arr.length < 5) return null;
+                const recent = arr.slice(-5);
+                const earlier = arr.slice(-10, -5);
+                if (earlier.length < 3) return null;
+                const avgRecent = recent.reduce((s2, d2) => s2 + d2[key], 0) / recent.length;
+                const avgEarlier = earlier.reduce((s2, d2) => s2 + d2[key], 0) / earlier.length;
+                if (avgEarlier === 0) return null;
+                const pct = (avgRecent - avgEarlier) / avgEarlier * 100;
+                return { pct, direction: pct > 0 ? "up" : "down", magnitude: Math.abs(pct) };
+              };
+              const trendSpend = detectTrend(dailyAgg, "spend");
+              const trendConv = detectTrend(dailyAgg, "conv");
+              const detectAnomaly = (arr, key) => {
+                if (arr.length < 7) return null;
+                const values = arr.slice(0, -1).map((d2) => d2[key]);
+                const avg = values.reduce((s2, v2) => s2 + v2, 0) / values.length;
+                const last2 = arr[arr.length - 1][key];
+                if (avg === 0) return null;
+                const ratio = last2 / avg;
+                if (ratio >= 2) return { type: "spike", ratio, value: last2, avg };
+                if (ratio <= 0.3 && avg > 10) return { type: "drop", ratio, value: last2, avg };
+                return null;
+              };
+              const anomalySpend = detectAnomaly(dailyAgg, "spend");
+              const today = /* @__PURE__ */ new Date();
+              const dayOfMonth = today.getDate();
+              const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+              const dailyAvg = dayOfMonth > 0 ? agg.investido / dayOfMonth : 0;
+              const projectedMonth = dailyAvg * lastDay;
+              const showProjection = repPeriod === "this_month" && dayOfMonth >= 3;
+              const scoreAccount = (d2) => {
+                const r2 = parseFloat(d2.investido) > 0 ? parseFloat(d2.valorResult) / parseFloat(d2.investido) : 0;
+                const ct = parseFloat(d2.ctr);
+                const conv = d2.conversoes;
+                let pts = 0;
+                if (r2 >= 4) pts += 40;
+                else if (r2 >= 2.5) pts += 28;
+                else if (r2 >= 1.5) pts += 15;
+                else if (r2 > 0) pts += 5;
+                if (ct >= 2) pts += 30;
+                else if (ct >= 1) pts += 20;
+                else if (ct >= 0.5) pts += 10;
+                if (conv >= 50) pts += 30;
+                else if (conv >= 10) pts += 20;
+                else if (conv >= 1) pts += 10;
+                if (r2 === 0 && conv === 0) pts = Math.min(pts, 10);
+                const grade = pts >= 80 ? "A" : pts >= 60 ? "B" : pts >= 40 ? "C" : "D";
+                return { pts, grade, r: r2, roasNum: r2 };
+              };
+              const recommendations = [];
+              const scored = rd2.map((d2) => ({ ...d2, ...scoreAccount(d2) })).sort((a2, b2) => b2.pts - a2.pts);
+              const topAccounts = scored.filter((a2) => a2.grade === "A" && parseFloat(a2.investido) > 10);
+              if (topAccounts.length > 0) {
+                recommendations.push({
+                  priority: "high",
+                  type: "scale",
+                  icon: "🚀",
+                  title: `Escale ${topAccounts.length} conta${topAccounts.length > 1 ? "s" : ""} performando bem`,
+                  desc: `${topAccounts.map((a2) => a2.client).join(", ")}: ROAS ${topAccounts[0].r.toFixed(1)}x. Aumente o investimento em 20-30%.`,
+                  action: "Aumentar verba"
+                });
+              }
+              const badAccounts = scored.filter((a2) => a2.grade === "D" && parseFloat(a2.investido) > 30);
+              if (badAccounts.length > 0) {
+                recommendations.push({
+                  priority: "high",
+                  type: "pause",
+                  icon: "⏸",
+                  title: `Pause ou revise ${badAccounts.length} conta${badAccounts.length > 1 ? "s" : ""}`,
+                  desc: `${badAccounts.map((a2) => a2.client).join(", ")}: gastando R$ ${badAccounts.reduce((s2, a2) => s2 + parseFloat(a2.investido), 0).toFixed(0)} sem retorno. Revisar urgente.`,
+                  action: "Revisar contas"
+                });
+              }
+              const highFreq = rd2.filter((d2) => d2.alcance > 0 && d2.impressoes / d2.alcance > 3.5);
+              if (highFreq.length > 0) {
+                recommendations.push({
+                  priority: "medium",
+                  type: "creative",
+                  icon: "🎨",
+                  title: "Refresh nos criativos",
+                  desc: `${highFreq.length} conta${highFreq.length > 1 ? "s" : ""} com frequência > 3.5x — público saturado dos anúncios.`,
+                  action: "Renovar criativos"
+                });
+              }
+              if (parseFloat(agg.ctr) < 0.8 && agg.impressoes > 1e3) {
+                recommendations.push({
+                  priority: "medium",
+                  type: "ctr",
+                  icon: "📉",
+                  title: `CTR de ${agg.ctr}% está baixo`,
+                  desc: `Abaixo do benchmark (1-2%). Teste novos headlines, imagens ou ajuste o público.`,
+                  action: "Otimizar criativo"
+                });
+              }
+              if (trendConv && trendConv.direction === "down" && trendConv.magnitude > 20) {
+                recommendations.push({
+                  priority: "high",
+                  type: "trend",
+                  icon: "⚠️",
+                  title: `Conversões caíram ${trendConv.magnitude.toFixed(0)}% recentemente`,
+                  desc: `Últimos 5 dias com queda significativa. Verifique pixel, públicos e criativos.`,
+                  action: "Investigar"
+                });
+              }
+              if (agg.conversoes === 0 && agg.investido > 50) {
+                recommendations.push({
+                  priority: "high",
+                  type: "pixel",
+                  icon: "🔧",
+                  title: "Sem conversões registradas",
+                  desc: "Verifique se o pixel está configurado e os eventos estão sendo disparados.",
+                  action: "Verificar pixel"
+                });
+              }
+              if (recommendations.length === 0) {
+                recommendations.push({
+                  priority: "low",
+                  type: "ok",
+                  icon: "✅",
+                  title: "Tudo dentro do esperado",
+                  desc: "Continue monitorando a performance e mantenha os testes.",
+                  action: null
+                });
+              }
+              const benchmarks = {
+                "purchase": { ctr: "1-3", cpa: "R$ 30-100", roas: "3-5" },
+                "lead": { ctr: "1-2.5", cpa: "R$ 5-25", roas: "—" },
+                "messaging_conversation_started_7d": { ctr: "1-2", cpa: "R$ 3-15", roas: "—" },
+                "complete_registration": { ctr: "1-2", cpa: "R$ 2-10", roas: "—" }
+              };
+              const primaryConvType = (_a3 = rd2[0]) == null ? void 0 : _a3.primaryType;
+              const benchmark = benchmarks[primaryConvType] || benchmarks["lead"];
+              const convTypeLabel = actionLabels[primaryConvType] || "conversões";
+              const roasScore = parseFloat(roas) >= 4 ? 100 : parseFloat(roas) >= 2.5 ? 70 : parseFloat(roas) >= 1 ? 40 : 20;
+              const ctrScore = parseFloat(agg.ctr) >= 2 ? 100 : parseFloat(agg.ctr) >= 1 ? 70 : parseFloat(agg.ctr) >= 0.5 ? 40 : 20;
+              const cpaScore = agg.conversoes > 0 ? parseFloat(cpa) <= 10 ? 100 : parseFloat(cpa) <= 30 ? 70 : parseFloat(cpa) <= 50 ? 40 : 20 : 50;
+              const healthScore = Math.round((roasScore + ctrScore + cpaScore) / 3);
+              const healthColor = healthScore >= 80 ? T.ok : healthScore >= 60 ? "#60a5fa" : healthScore >= 40 ? T.warn : T.err;
+              const healthLabel = healthScore >= 80 ? "Excelente" : healthScore >= 60 ? "Boa" : healthScore >= 40 ? "Atenção" : "Crítica";
+              const freq = agg.alcance > 0 ? (agg.impressoes / agg.alcance).toFixed(2) : "0.00";
+              const cpm = agg.impressoes > 0 ? (agg.investido / agg.impressoes * 1e3).toFixed(2) : "0.00";
+              const accInitials = repClient === "all" ? "AC" : repClient.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase();
+              const VarBadge = ({ v: v2, inverted = false }) => {
+                if (!v2) return null;
+                const isPositive = inverted ? v2.trend === "down" : v2.trend === "up";
+                const c2 = isPositive ? T.ok : T.err;
+                return /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { display: "inline-flex", alignItems: "center", gap: 3, fontSize: 10, fontFamily: T.mono, fontWeight: 600, color: c2, background: `${c2}15`, border: `1px solid ${c2}30`, borderRadius: 5, padding: "2px 6px", lineHeight: 1 }, children: [
+                  v2.trend === "up" ? "↑" : "↓",
+                  " ",
+                  v2.label
+                ] });
+              };
+              const Sparkline = ({ data, color: color2, height = 24 }) => {
+                if (!data || data.length < 2) return null;
+                const max2 = Math.max(...data, 1);
+                const min2 = Math.min(...data, 0);
+                const range3 = max2 - min2 || 1;
+                const w2 = 80;
+                const points = data.map((v2, i) => {
+                  const x2 = i / (data.length - 1) * w2;
+                  const y2 = height - (v2 - min2) / range3 * height;
+                  return `${x2},${y2}`;
+                }).join(" ");
+                return /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: w2, height, viewBox: `0 0 ${w2} ${height}`, style: { display: "block" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("polyline", { points, fill: "none", stroke: color2, strokeWidth: "1.5", strokeLinecap: "round", strokeLinejoin: "round" }) });
+              };
+              return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: `linear-gradient(135deg,rgba(0,129,251,.06) 0%,rgba(99,102,241,.04) 100%)`, borderRadius: 16, border: `1px solid rgba(0,129,251,.15)`, padding: isMobile ? "20px" : "24px 28px", position: "relative", overflow: "hidden" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: -30, right: -30, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle,rgba(0,129,251,.08) 0%,transparent 70%)", pointerEvents: "none" } }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18, position: "relative", flexWrap: "wrap" }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 48, height: 48, borderRadius: 12, background: "rgba(0,129,251,.18)", border: "1px solid rgba(0,129,251,.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: T.meta, flexShrink: 0 }, children: accInitials }),
                     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 500, color: T.txt, marginBottom: 3 }, children: b2.label }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, background: "rgba(255,255,255,.06)", borderRadius: 100, height: 4, overflow: "hidden" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: i === 0 ? T.ok : "rgba(34,197,94,.4)", width: `${pct}%`, height: "100%", borderRadius: 100 } }) }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 10, color: T.mute, flexShrink: 0 }, children: [
-                          pct,
-                          "%"
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: isMobile ? 16 : 18, fontWeight: 600, color: T.txt, letterSpacing: "-.01em" }, children: repClient === "all" ? "Todas as contas" : repClient }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { background: "rgba(0,129,251,.12)", color: T.meta, fontSize: 10, fontWeight: 600, borderRadius: 5, padding: "2px 7px", letterSpacing: ".05em", textTransform: "uppercase" }, children: "Meta Ads" })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: T.mute, flexWrap: "wrap" }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: repActivePeriodLabel }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { opacity: 0.4 }, children: "·" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                          rd2.length,
+                          " conta",
+                          rd2.length > 1 ? "s" : ""
+                        ] }),
+                        aggPrev && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { opacity: 0.4 }, children: "·" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
+                            "vs ",
+                            ranges.duration,
+                            " dias anteriores"
+                          ] })
                         ] })
                       ] })
                     ] }),
                     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "right", flexShrink: 0 }, children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: 16, fontWeight: 600, color: i === 0 ? T.ok : T.sub }, children: b2.value.toLocaleString("pt-BR") }),
-                      i === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.ok, fontWeight: 500 }, children: "PRINCIPAL" })
-                    ] })
-                  ] }, i);
-                }) })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${roasColor === "rgba(34,197,94,1)" || roasColor === T.ok ? "rgba(34,197,94,.2)" : roasColor === T.warn ? "rgba(245,158,11,.2)" : "rgba(239,68,68,.2)"}`, padding: "18px 20px" }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, letterSpacing: ".1em", fontWeight: 600, marginBottom: 10 }, children: "ANÁLISE DE ROAS" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "flex-end", gap: 6, marginBottom: 10 }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontFamily: T.mono, fontSize: 36, fontWeight: 500, color: roasColor, lineHeight: 1 }, children: roas }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14, color: T.mute, marginBottom: 4 }, children: "x" })
-                  ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 12, color: T.sub, lineHeight: 1.65, marginBottom: 10 }, children: [
-                    "Para cada ",
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("strong", { style: { color: T.txt }, children: "R$ 1,00" }),
-                    " investido, o retorno foi de ",
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: roasColor }, children: [
-                      "R$ ",
-                      roas
-                    ] }),
-                    " em valor de conversão."
-                  ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 2 }, children: [{ l: "< 2", active: parseFloat(roas) < 2, c: T.err }, { l: "2–3", active: parseFloat(roas) >= 2 && parseFloat(roas) < 3, c: T.warn }, { l: "3–4", active: parseFloat(roas) >= 3 && parseFloat(roas) < 4, c: "#60a5fa" }, { l: "> 4", active: parseFloat(roas) >= 4, c: T.ok }].map((s2, i) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, textAlign: "center", padding: "5px 4px", borderRadius: 7, background: s2.active ? `${s2.c}18` : "rgba(255,255,255,.03)", border: `1px solid ${s2.active ? s2.c + "44" : T.border}` }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, fontFamily: T.mono, color: s2.active ? s2.c : T.mute, fontWeight: s2.active ? 600 : 400 }, children: s2.l }) }, i)) })
-                ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "18px 20px" }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, letterSpacing: ".1em", fontWeight: 600, marginBottom: 10 }, children: "EFICIÊNCIA DE CAPTAÇÃO" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", alignItems: "flex-end", gap: 6, marginBottom: 10 }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontFamily: T.mono, fontSize: 28, fontWeight: 500, color: "#a78bfa", lineHeight: 1 }, children: [
-                    "R$ ",
-                    cpa
-                  ] }) }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 12, color: T.sub, lineHeight: 1.65, marginBottom: 12 }, children: [
-                    "Custo médio por resultado no período. ",
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: T.txt }, children: [
-                      agg.conversoes,
-                      " resultados"
-                    ] }),
-                    " com investimento de ",
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: T.txt }, children: [
-                      "R$ ",
-                      agg.investido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })
-                    ] }),
-                    "."
-                  ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(255,255,255,.03)", borderRadius: 9, padding: "10px 14px", display: "flex", justifyContent: "space-between" }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "center" }, children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, marginBottom: 3 }, children: "Cliques" }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: 13, color: T.txt }, children: agg.cliques.toLocaleString("pt-BR") })
-                    ] }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 1, background: T.border } }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "center" }, children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, marginBottom: 3 }, children: "CTR" }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontFamily: T.mono, fontSize: 13, color: parseFloat(agg.ctr) >= 1 ? T.ok : T.warn }, children: [
-                        agg.ctr,
-                        "%"
-                      ] })
-                    ] }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 1, background: T.border } }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "center" }, children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, marginBottom: 3 }, children: "CPC" }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontFamily: T.mono, fontSize: 13, color: T.sub }, children: [
-                        "R$ ",
-                        agg.cpc
-                      ] })
-                    ] })
-                  ] })
-                ] })
-              ] }),
-              rd2.length > 1 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, overflow: "hidden" }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "14px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8 }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Comparativo por conta" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 10, background: "rgba(99,102,241,.1)", color: T.accent, borderRadius: 6, padding: "2px 8px", fontWeight: 500 }, children: [
-                    rd2.length,
-                    " contas"
-                  ] })
-                ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 12 }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { style: { background: "rgba(255,255,255,.02)" }, children: ["Conta", "Investido", "Resultados", "CPA", "ROAS", "CTR", "CPC"].map((h2) => /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: { textAlign: "left", padding: "10px 16px 10px 0", color: T.mute, fontWeight: 600, fontSize: 9, letterSpacing: ".08em", textTransform: "uppercase", borderBottom: `1px solid ${T.border}`, paddingLeft: h2 === "Conta" ? 20 : 0 }, children: h2 }, h2)) }) }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: rd2.map((d2, i) => {
-                    const r2 = parseFloat(d2.investido) > 0 ? (parseFloat(d2.valorResult) / parseFloat(d2.investido)).toFixed(2) : "0.00";
-                    const cp = d2.conversoes > 0 ? (parseFloat(d2.investido) / d2.conversoes).toFixed(2) : "–";
-                    const rc2 = parseFloat(r2) >= 4 ? T.ok : parseFloat(r2) >= 2.5 ? T.warn : parseFloat(r2) > 0 ? T.err : T.mute;
-                    return /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { className: "rh", style: { borderBottom: i < rd2.length - 1 ? `1px solid ${T.border}` : "none" }, children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { padding: "13px 0 13px 20px" }, children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: 500, color: T.txt }, children: d2.client }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 10, color: T.mute, marginTop: 2 }, children: [
-                          d2.impressoes.toLocaleString("pt-BR"),
-                          " imp."
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 4 }, children: "Saúde geral" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { position: "relative", width: 46, height: 46 }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "46", height: "46", viewBox: "0 0 46 46", style: { transform: "rotate(-90deg)" }, children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("circle", { cx: "23", cy: "23", r: "19", fill: "none", stroke: "rgba(255,255,255,.07)", strokeWidth: "3.5" }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("circle", { cx: "23", cy: "23", r: "19", fill: "none", stroke: healthColor, strokeWidth: "3.5", strokeLinecap: "round", strokeDasharray: `${healthScore / 100 * 119.4} 119.4` })
+                          ] }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.mono, fontSize: 13, fontWeight: 600, color: healthColor }, children: healthScore })
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 13, fontWeight: 600, color: healthColor, letterSpacing: "-.01em" }, children: healthLabel }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, fontFamily: T.mono }, children: "de 100" })
                         ] })
+                      ] })
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: isMobile ? 12 : 16, position: "relative" }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 6 }, children: "Investimento" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontFamily: T.mono, fontSize: isMobile ? 22 : 28, fontWeight: 500, color: T.txt, letterSpacing: "-.01em", lineHeight: 1 }, children: [
+                          "R$ ",
+                          agg.investido.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(VarBadge, { v: varInvestido })
                       ] }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { padding: "13px 16px 13px 0", fontFamily: T.mono, color: T.accent, fontWeight: 500 }, children: [
-                        "R$ ",
-                        parseFloat(d2.investido).toLocaleString("pt-BR", { minimumFractionDigits: 2 })
+                      dailyAgg.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkline, { data: dailyAgg.map((d2) => d2.spend), color: T.accent })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 6 }, children: "Resultados" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontFamily: T.mono, fontSize: isMobile ? 22 : 28, fontWeight: 500, color: T.txt, letterSpacing: "-.01em", lineHeight: 1 }, children: agg.conversoes.toLocaleString("pt-BR") }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(VarBadge, { v: varConv })
                       ] }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "13px 16px 13px 0", fontFamily: T.mono, fontWeight: 600, color: T.ok }, children: d2.conversoes }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { padding: "13px 16px 13px 0", fontFamily: T.mono, color: T.sub }, children: [
-                        "R$ ",
-                        cp
+                      dailyAgg.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkline, { data: dailyAgg.map((d2) => d2.conv), color: T.ok })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 6 }, children: "ROAS" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontFamily: T.mono, fontSize: isMobile ? 22 : 28, fontWeight: 500, color: roasColor, letterSpacing: "-.01em", lineHeight: 1 }, children: [
+                          roas,
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14, color: T.mute, marginLeft: 2 }, children: "x" })
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(VarBadge, { v: varRoas })
                       ] }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { padding: "13px 16px 13px 0" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontFamily: T.mono, fontSize: 12, background: `${rc2}18`, color: rc2, borderRadius: 6, padding: "3px 8px", fontWeight: 600, border: `1px solid ${rc2}30` }, children: [
-                        r2,
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 10, color: T.mute, marginTop: 6 }, children: [
+                        "Benchmark: ",
+                        benchmark.roas,
                         "x"
-                      ] }) }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { padding: "13px 16px 13px 0", fontFamily: T.mono, color: parseFloat(d2.ctr) < 1 ? T.warn : T.ok }, children: [
-                        d2.ctr,
-                        "%"
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 6 }, children: "CPA" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontFamily: T.mono, fontSize: isMobile ? 22 : 28, fontWeight: 500, color: "#a78bfa", letterSpacing: "-.01em", lineHeight: 1 }, children: [
+                          "R$ ",
+                          cpa
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(VarBadge, { v: varCpa, inverted: true })
                       ] }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { padding: "13px 0", fontFamily: T.mono, color: T.sub }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 10, color: T.mute, marginTop: 6 }, children: [
+                        "Benchmark: ",
+                        benchmark.cpa
+                      ] })
+                    ] })
+                  ] }),
+                  showProjection && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginTop: 18, paddingTop: 14, borderTop: `1px solid rgba(0,129,251,.1)`, display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: T.sub, flexWrap: "wrap" }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14 }, children: "📅" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                      "Ritmo atual: ",
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: T.txt, fontFamily: T.mono }, children: [
                         "R$ ",
-                        d2.cpc
+                        dailyAvg.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+                        "/dia"
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { opacity: 0.4 }, children: "·" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                      "Projeção mês: ",
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: T.warn, fontFamily: T.mono }, children: [
+                        "R$ ",
+                        projectedMonth.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+                      ] }),
+                      " (",
+                      lastDay - dayOfMonth,
+                      " dias restantes)"
+                    ] })
+                  ] })
+                ] }),
+                recommendations.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, overflow: "hidden" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "14px 22px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 10 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 30, height: 30, borderRadius: 8, background: "linear-gradient(135deg,rgba(99,102,241,.18) 0%,rgba(168,139,250,.18) 100%)", border: "1px solid rgba(99,102,241,.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }, children: "🧠" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Recomendações inteligentes" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.mute, marginTop: 2 }, children: "Baseadas em performance, tendências e benchmarks" })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 10, background: "rgba(99,102,241,.1)", color: T.accent, borderRadius: 6, padding: "3px 10px", fontWeight: 600 }, children: [
+                      recommendations.length,
+                      " ação",
+                      recommendations.length > 1 ? "ões" : ""
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: recommendations.map((rec, i) => {
+                    const c2 = rec.priority === "high" ? rec.type === "scale" ? T.ok : T.err : rec.priority === "medium" ? T.warn : T.sub;
+                    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "14px 22px", borderBottom: i < recommendations.length - 1 ? `1px solid ${T.border}` : "none", display: "flex", alignItems: "flex-start", gap: 14 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 36, height: 36, borderRadius: 9, background: `${c2}15`, border: `1px solid ${c2}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }, children: rec.icon }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 13, fontWeight: 600, color: T.txt }, children: rec.title }),
+                          rec.priority === "high" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 9, background: `${c2}18`, color: c2, borderRadius: 4, padding: "2px 6px", fontWeight: 700, letterSpacing: ".05em" }, children: "ALTA PRIORIDADE" })
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.sub, lineHeight: 1.55 }, children: rec.desc })
                       ] })
                     ] }, i);
                   }) })
-                ] }) })
-              ] })
-            ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr", gap: 14 }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "18px 22px" }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Desempenho de entrega" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.mute, marginTop: 2 }, children: "Comparado com período anterior" })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 10, color: T.mute, fontFamily: T.mono }, children: [
+                        "Benchmark CTR: ",
+                        benchmark.ctr,
+                        "%"
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }, children: [
+                      { l: "CTR", v: `${agg.ctr}%`, c: parseFloat(agg.ctr) >= 1 ? T.ok : T.warn, sub: parseFloat(agg.ctr) >= 2 ? "acima média" : parseFloat(agg.ctr) >= 1 ? "bom" : "baixo" },
+                      { l: "CPC", v: `R$ ${agg.cpc}`, c: T.sub, sub: "por clique" },
+                      { l: "CPM", v: `R$ ${cpm}`, c: T.sub, sub: "por mil imp." },
+                      { l: "Frequência", v: freq, c: parseFloat(freq) > 3.5 ? T.err : parseFloat(freq) > 3 ? T.warn : T.sub, sub: parseFloat(freq) > 3.5 ? "saturado" : parseFloat(freq) > 3 ? "alta" : "normal" }
+                    ].map((m2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(255,255,255,.025)", borderRadius: 10, padding: "12px 14px", border: `1px solid ${T.border}` }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 5 }, children: m2.l }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: 15, color: m2.c, fontWeight: 500, marginBottom: 3, lineHeight: 1.2 }, children: m2.v }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: m2.c, fontWeight: 500 }, children: m2.sub })
+                    ] }, i)) }),
+                    (trendSpend || trendConv || anomalySpend) && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.border}`, display: "flex", flexDirection: "column", gap: 8 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }, children: "Tendências detectadas" }),
+                      trendConv && Math.abs(trendConv.pct) > 10 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: T.sub }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14 }, children: trendConv.direction === "up" ? "📈" : "📉" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                          "Conversões ",
+                          trendConv.direction === "up" ? "crescendo" : "caindo",
+                          " ",
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: trendConv.direction === "up" ? T.ok : T.err, fontFamily: T.mono }, children: [
+                            Math.abs(trendConv.pct).toFixed(0),
+                            "%"
+                          ] }),
+                          " nos últimos 5 dias"
+                        ] })
+                      ] }),
+                      trendSpend && Math.abs(trendSpend.pct) > 15 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: T.sub }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14 }, children: "💸" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                          "Investimento ",
+                          trendSpend.direction === "up" ? "acelerando" : "desacelerando",
+                          " ",
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: T.warn, fontFamily: T.mono }, children: [
+                            Math.abs(trendSpend.pct).toFixed(0),
+                            "%"
+                          ] }),
+                          " nos últimos 5 dias"
+                        ] })
+                      ] }),
+                      anomalySpend && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: T.sub }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14 }, children: anomalySpend.type === "spike" ? "⚠️" : "❗" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                          "Anomalia detectada hoje: ",
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("strong", { style: { color: T.warn, fontFamily: T.mono }, children: [
+                            "R$ ",
+                            anomalySpend.value.toFixed(0)
+                          ] }),
+                          " (",
+                          anomalySpend.ratio.toFixed(1),
+                          "x da média)"
+                        ] })
+                      ] })
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${roasColor}22`, padding: "18px 22px", position: "relative", overflow: "hidden" }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: 0, left: 0, right: 0, height: 2, background: roasColor } }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Retorno do investimento" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.mute, marginTop: 2 }, children: convTypeLabel })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10, background: `${roasColor}18`, color: roasColor, borderRadius: 6, padding: "3px 9px", fontWeight: 600, border: `1px solid ${roasColor}40` }, children: roasLabel })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 14 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontFamily: T.mono, fontSize: 42, fontWeight: 500, color: roasColor, lineHeight: 0.95, letterSpacing: "-.02em" }, children: roas }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 18, color: T.mute, marginBottom: 6, fontFamily: T.mono }, children: "x" }),
+                      varRoas && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginBottom: 8, marginLeft: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(VarBadge, { v: varRoas }) })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 11, color: T.sub, lineHeight: 1.65, marginBottom: 14 }, children: [
+                      "Cada ",
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.txt, fontFamily: T.mono, fontWeight: 500 }, children: "R$ 1,00" }),
+                      " retornou ",
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: roasColor, fontFamily: T.mono, fontWeight: 600 }, children: [
+                        "R$ ",
+                        roas
+                      ] }),
+                      "."
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", height: 6, borderRadius: 3, overflow: "hidden", background: "rgba(255,255,255,.05)", marginBottom: 6 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, background: T.err, opacity: parseFloat(roas) < 2 ? 1 : 0.18 } }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, background: T.warn, opacity: parseFloat(roas) >= 2 && parseFloat(roas) < 3 ? 1 : 0.18 } }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, background: "#60a5fa", opacity: parseFloat(roas) >= 3 && parseFloat(roas) < 4 ? 1 : 0.18 } }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, background: T.ok, opacity: parseFloat(roas) >= 4 ? 1 : 0.18 } })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 9, color: T.mute, fontFamily: T.mono }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: parseFloat(roas) < 2 ? T.err : T.mute, fontWeight: parseFloat(roas) < 2 ? 600 : 400 }, children: "< 2 ruim" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: parseFloat(roas) >= 2 && parseFloat(roas) < 3 ? T.warn : T.mute, fontWeight: parseFloat(roas) >= 2 && parseFloat(roas) < 3 ? 600 : 400 }, children: "2-3 ok" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: parseFloat(roas) >= 3 && parseFloat(roas) < 4 ? "#60a5fa" : T.mute, fontWeight: parseFloat(roas) >= 3 && parseFloat(roas) < 4 ? 600 : 400 }, children: "3-4 bom" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: parseFloat(roas) >= 4 ? T.ok : T.mute, fontWeight: parseFloat(roas) >= 4 ? 600 : 400 }, children: "4+ ótimo" })
+                    ] })
+                  ] })
+                ] }),
+                rd2.length > 1 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, overflow: "hidden" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "16px 22px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 32, height: 32, borderRadius: 9, background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.2)", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M7 1l1.8 4.2 4.2.5-3 3 .9 4.3-3.9-2-3.9 2 .9-4.3-3-3 4.2-.5L7 1z", stroke: T.accent, strokeWidth: "1.2", strokeLinejoin: "round" }) }) }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Ranking de contas" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.mute, marginTop: 2 }, children: "Score baseado em ROAS + CTR + volume" })
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 5, fontSize: 9, color: T.mute, fontFamily: T.mono }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { background: `${T.ok}18`, color: T.ok, borderRadius: 4, padding: "2px 6px", fontWeight: 600 }, children: "A escalar" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { background: `${T.warn}18`, color: T.warn, borderRadius: 4, padding: "2px 6px", fontWeight: 600 }, children: "B otimizar" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { background: "rgba(168,139,250,.15)", color: "#a78bfa", borderRadius: 4, padding: "2px 6px", fontWeight: 600 }, children: "C revisar" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { background: `${T.err}18`, color: T.err, borderRadius: 4, padding: "2px 6px", fontWeight: 600 }, children: "D pausar" })
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: scored.map((d2, i) => {
+                    d2.conversoes > 0 ? (parseFloat(d2.investido) / d2.conversoes).toFixed(2) : "–";
+                    const accInit = d2.client.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase();
+                    const gradeColors = { A: T.ok, B: T.warn, C: "#a78bfa", D: T.err };
+                    const gc2 = gradeColors[d2.grade];
+                    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "16px 22px", borderBottom: i < scored.length - 1 ? `1px solid ${T.border}` : "none", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { position: "relative", flexShrink: 0 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 42, height: 42, borderRadius: 10, background: "rgba(0,129,251,.1)", border: "1px solid rgba(0,129,251,.18)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: T.meta }, children: accInit }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", bottom: -4, right: -4, width: 20, height: 20, borderRadius: 6, background: gc2, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, fontFamily: T.mono, border: `2px solid ${T.card}` }, children: d2.grade })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 140 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 13, fontWeight: 600, color: T.txt, marginBottom: 3 }, children: d2.client }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 10, fontSize: 10, color: T.mute, fontFamily: T.mono, flexWrap: "wrap" }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                            "R$ ",
+                            parseFloat(d2.investido).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+                          ] }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { opacity: 0.4 }, children: "·" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                            d2.conversoes,
+                            " conv"
+                          ] }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { opacity: 0.4 }, children: "·" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: parseFloat(d2.ctr) < 1 ? T.warn : T.ok }, children: [
+                            d2.ctr,
+                            "% CTR"
+                          ] })
+                        ] })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "right", flexShrink: 0 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 3 }, children: "ROAS" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontFamily: T.mono, fontSize: 18, fontWeight: 600, color: gc2, lineHeight: 1 }, children: [
+                          d2.r.toFixed(2),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, color: T.mute, marginLeft: 2 }, children: "x" })
+                        ] })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flexShrink: 0, width: isMobile ? "100%" : 120 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { height: 6, background: "rgba(255,255,255,.06)", borderRadius: 3, overflow: "hidden", marginBottom: 4 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { height: "100%", width: `${d2.pts}%`, background: gc2, borderRadius: 3, transition: "width .4s" } }) }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 9, color: T.mute, fontFamily: T.mono }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Score" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: gc2, fontWeight: 600 }, children: [
+                            d2.pts,
+                            "/100"
+                          ] })
+                        ] })
+                      ] })
+                    ] }, i);
+                  }) })
+                ] }),
+                breakdownList.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, overflow: "hidden" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "16px 22px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 12 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 32, height: 32, borderRadius: 9, background: "rgba(34,197,94,.12)", border: "1px solid rgba(34,197,94,.2)", display: "flex", alignItems: "center", justifyContent: "center" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M2 10l4-4 3 3 5-6", stroke: T.ok, strokeWidth: "1.4", strokeLinecap: "round", strokeLinejoin: "round" }) }) }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Tipos de conversão" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 11, color: T.mute, marginTop: 2 }, children: [
+                        breakdownList.length,
+                        " tipo",
+                        breakdownList.length > 1 ? "s" : "",
+                        " detectado",
+                        breakdownList.length > 1 ? "s" : ""
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "right" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: 16, fontWeight: 600, color: T.ok }, children: agg.conversoes.toLocaleString("pt-BR") }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase" }, children: "total" })
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: breakdownList.map((b2, i) => {
+                    const pct = agg.conversoes > 0 ? b2.value / agg.conversoes * 100 : 0;
+                    const isPrimary = i === 0;
+                    const colorList = [T.ok, "#60a5fa", "#a78bfa", T.warn, "#f472b6"];
+                    const c2 = colorList[i % colorList.length];
+                    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "14px 22px", borderBottom: i < breakdownList.length - 1 ? `1px solid ${T.border}` : "none", display: "flex", alignItems: "center", gap: 14 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 6, height: 36, borderRadius: 3, background: c2, flexShrink: 0 } }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 500, color: T.txt }, children: b2.label }),
+                          isPrimary && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 9, background: "rgba(34,197,94,.12)", color: T.ok, borderRadius: 4, padding: "2px 6px", fontWeight: 600, letterSpacing: ".05em" }, children: "PRINCIPAL" })
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1, background: "rgba(255,255,255,.06)", borderRadius: 100, height: 6, overflow: "hidden" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: c2, width: `${pct}%`, height: "100%", borderRadius: 100 } }) }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 11, color: T.mute, fontFamily: T.mono, minWidth: 40, textAlign: "right" }, children: [
+                            pct.toFixed(1),
+                            "%"
+                          ] })
+                        ] })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { textAlign: "right", flexShrink: 0, minWidth: 60 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: 18, fontWeight: 600, color: isPrimary ? T.ok : T.txt, lineHeight: 1 }, children: b2.value.toLocaleString("pt-BR") }) })
+                    ] }, i);
+                  }) })
+                ] })
+              ] });
+            })()
           ] });
         })(),
         view === "budget" && (() => {
@@ -53213,6 +53668,483 @@ function Dashboard() {
                   ] })
                 ] }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("pre", { style: { fontFamily: T.mono, fontSize: 11, color: T.sub, lineHeight: 1.75, background: "rgba(255,255,255,.03)", borderRadius: 9, padding: "14px 16px", overflow: "auto", maxHeight: 220 }, children: N8N_FLOW })
+              ] })
+            ] })
+          ] });
+        })(),
+        view === "export" && (() => {
+          var _a2;
+          const allMetrics = [
+            { id: "spend", l: "Investimento", icon: "💰", cat: "core", fmt: "currency" },
+            { id: "impressions", l: "Impressões", icon: "👁", cat: "core", fmt: "number" },
+            { id: "reach", l: "Alcance", icon: "👥", cat: "core", fmt: "number" },
+            { id: "clicks", l: "Cliques", icon: "🖱", cat: "core", fmt: "number" },
+            { id: "ctr", l: "CTR", icon: "📊", cat: "quality", fmt: "percent" },
+            { id: "cpc", l: "CPC", icon: "💵", cat: "quality", fmt: "currency" },
+            { id: "cpm", l: "CPM", icon: "💸", cat: "quality", fmt: "currency" },
+            { id: "frequency", l: "Frequência", icon: "🔁", cat: "quality", fmt: "decimal" },
+            { id: "conversions", l: "Conversões", icon: "🎯", cat: "results", fmt: "number" },
+            { id: "cpa", l: "Custo por Conversão", icon: "📉", cat: "results", fmt: "currency" },
+            { id: "convValue", l: "Valor Conv.", icon: "💎", cat: "results", fmt: "currency" },
+            { id: "roas", l: "ROAS", icon: "💹", cat: "results", fmt: "decimal" }
+          ];
+          const expPresets = [
+            { v: "today", l: "Hoje" },
+            { v: "yesterday", l: "Ontem" },
+            { v: "this_month", l: "Este mês" },
+            { v: "maximum", l: "Máximo" },
+            { v: "last_7d", l: "Últimos 7 dias" },
+            { v: "last_14d", l: "Últimos 14 dias" },
+            { v: "last_28d", l: "Últimos 28 dias" },
+            { v: "last_30d", l: "Últimos 30 dias" },
+            { v: "last_90d", l: "Últimos 90 dias" },
+            { v: "this_week_sun_today", l: "Esta semana" },
+            { v: "last_week_sun_sat", l: "Semana passada" },
+            { v: "last_month", l: "Mês passado" }
+          ];
+          const expActivePeriodLabel = exportConfig.period === "custom" && exportConfig.customRange.start && exportConfig.customRange.end ? `${exportConfig.customRange.start} → ${exportConfig.customRange.end}` : ((_a2 = expPresets.find((p2) => p2.v === exportConfig.period)) == null ? void 0 : _a2.l) || "Selecione período";
+          const toggleAccount = (id2) => {
+            setExportConfig((c2) => ({ ...c2, accountIds: c2.accountIds.includes(id2) ? c2.accountIds.filter((a2) => a2 !== id2) : [...c2.accountIds, id2] }));
+          };
+          const toggleAllAccounts = () => {
+            setExportConfig((c2) => ({ ...c2, accountIds: c2.accountIds.length === metaAccounts.length ? [] : metaAccounts.map((a2) => a2.id) }));
+          };
+          const toggleMetric = (id2) => {
+            setExportConfig((c2) => ({ ...c2, metrics: c2.metrics.includes(id2) ? c2.metrics.filter((m2) => m2 !== id2) : [...c2.metrics, id2] }));
+          };
+          const presetMetrics = (preset) => {
+            const presets = {
+              basic: ["spend", "impressions", "clicks", "cpc", "conversions", "cpa"],
+              performance: ["spend", "ctr", "cpc", "cpm", "conversions", "cpa", "roas"],
+              full: ["spend", "impressions", "reach", "clicks", "ctr", "cpc", "cpm", "frequency", "conversions", "cpa", "convValue", "roas"]
+            };
+            setExportConfig((c2) => ({ ...c2, metrics: presets[preset] || c2.metrics }));
+          };
+          const valid = exportConfig.accountIds.length > 0 && exportConfig.metrics.length > 0 && exportConfig.spreadsheetId.trim() !== "";
+          const groupedMetrics = {
+            core: allMetrics.filter((m2) => m2.cat === "core"),
+            quality: allMetrics.filter((m2) => m2.cat === "quality"),
+            results: allMetrics.filter((m2) => m2.cat === "results")
+          };
+          const catLabels = { core: "Métricas principais", quality: "Qualidade da entrega", results: "Resultados e retorno" };
+          const handleExport = async () => {
+            if (!valid) {
+              alert("Preencha todos os campos obrigatórios.");
+              return;
+            }
+            if (metaStatus !== "connected") {
+              alert("Conecte o Business Manager primeiro.");
+              return;
+            }
+            setExportLoading(true);
+            setExportLog(null);
+            try {
+              const accs = metaAccounts.filter((a22) => exportConfig.accountIds.includes(a22.id));
+              const periodMap = { "7d": "last_7d", "14d": "last_14d", "28d": "last_28d", "30d": "last_30d", "90d": "last_90d", "maximum": "maximum" };
+              let timeParam;
+              if (exportConfig.period === "custom" && exportConfig.customRange.start && exportConfig.customRange.end) {
+                timeParam = `time_range={"since":"${exportConfig.customRange.start}","until":"${exportConfig.customRange.end}"}`;
+              } else {
+                timeParam = `date_preset=${periodMap[exportConfig.period] || exportConfig.period || "last_30d"}`;
+              }
+              const levelParam = { "account": "account", "campaign": "campaign", "adset": "adset" }[exportConfig.level];
+              const fields = "impressions,reach,clicks,ctr,cpc,spend,actions,action_values" + (exportConfig.level === "campaign" ? ",campaign_name" : exportConfig.level === "adset" ? ",adset_name,campaign_name" : "");
+              const conversionTypes = ["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase", "lead", "omni_lead", "offsite_conversion.fb_pixel_lead", "onsite_conversion.lead_grouped", "complete_registration", "omni_complete_registration", "messaging_conversation_started_7d", "onsite_conversion.messaging_conversation_started_7d", "messaging_first_reply"];
+              const valueTypes = ["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase", "onsite_conversion.purchase"];
+              const allRows = [];
+              for (const acc of accs) {
+                const url = `${GRAPH}/act_${acc.id}/insights?fields=${fields}&${timeParam}&level=${levelParam}&limit=200&access_token=${savedToken}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.error) {
+                  console.error("Meta API error:", data.error);
+                  continue;
+                }
+                (data.data || []).forEach((d2) => {
+                  const allConvs = (d2.actions || []).filter((a22) => conversionTypes.includes(a22.action_type));
+                  const totalConv = allConvs.reduce((s2, a22) => s2 + (parseInt(a22.value) || 0), 0);
+                  const convVal = (d2.action_values || []).filter((a22) => valueTypes.includes(a22.action_type)).reduce((s2, a22) => s2 + parseFloat(a22.value || 0), 0);
+                  const spend = parseFloat(d2.spend || 0);
+                  const impressions = parseInt(d2.impressions) || 0;
+                  const reach = parseInt(d2.reach) || 0;
+                  const row = {
+                    _name: d2.campaign_name || d2.adset_name || acc.name,
+                    _account: acc.name,
+                    _level: exportConfig.level,
+                    spend,
+                    impressions,
+                    reach,
+                    clicks: parseInt(d2.clicks) || 0,
+                    ctr: parseFloat(d2.ctr || 0),
+                    cpc: parseFloat(d2.cpc || 0),
+                    cpm: impressions > 0 ? spend / impressions * 1e3 : 0,
+                    frequency: reach > 0 ? impressions / reach : 0,
+                    conversions: totalConv,
+                    cpa: totalConv > 0 ? spend / totalConv : 0,
+                    convValue: convVal,
+                    roas: spend > 0 ? convVal / spend : 0
+                  };
+                  allRows.push(row);
+                });
+              }
+              if (allRows.length === 0) {
+                setExportLoading(false);
+                setExportLog({ type: "error", msg: "Nenhum dado encontrado para o período selecionado." });
+                return;
+              }
+              const fmt = (val, type) => {
+                if (type === "currency") return `R$ ${val.toFixed(2)}`;
+                if (type === "percent") return `${val.toFixed(2)}%`;
+                if (type === "decimal") return val.toFixed(2);
+                return Math.round(val).toString();
+              };
+              const periodLabel = expActivePeriodLabel;
+              const sel = allMetrics.filter((m2) => exportConfig.metrics.includes(m2.id));
+              let cellsToWrite = [];
+              if (exportConfig.layout === "vertical") {
+                let r2 = 1;
+                for (const row of allRows) {
+                  cellsToWrite.push({ row: r2, col: 1, val: `${exportConfig.level === "account" ? "Conta" : exportConfig.level === "campaign" ? "Campanha" : "Conjunto"}: ${row._name}`, bold: true, bg: "#FFE4A8" });
+                  cellsToWrite.push({ row: r2, col: 2, val: periodLabel, bold: true, bg: "#FFE4A8" });
+                  r2++;
+                  for (const m2 of sel) {
+                    cellsToWrite.push({ row: r2, col: 1, val: m2.l });
+                    cellsToWrite.push({ row: r2, col: 2, val: fmt(row[m2.id] || 0, m2.fmt) });
+                    r2++;
+                  }
+                  r2 += 2;
+                }
+              } else {
+                const headers = ["Conta", exportConfig.level !== "account" ? exportConfig.level === "campaign" ? "Campanha" : "Conjunto" : null, "Período", ...sel.map((m2) => m2.l)].filter(Boolean);
+                cellsToWrite.push(...headers.map((h2, i) => ({ row: 1, col: i + 1, val: h2, bold: true, bg: "#FFE4A8" })));
+                allRows.forEach((row, i) => {
+                  let col = 1;
+                  cellsToWrite.push({ row: i + 2, col: col++, val: row._account });
+                  if (exportConfig.level !== "account") cellsToWrite.push({ row: i + 2, col: col++, val: row._name });
+                  cellsToWrite.push({ row: i + 2, col: col++, val: periodLabel });
+                  sel.forEach((m2) => {
+                    cellsToWrite.push({ row: i + 2, col: col++, val: fmt(row[m2.id] || 0, m2.fmt) });
+                  });
+                });
+              }
+              const maxCol = Math.max(...cellsToWrite.map((c2) => c2.col));
+              const maxRow = Math.max(...cellsToWrite.map((c2) => c2.row));
+              const grid2 = Array.from({ length: maxRow }, () => Array(maxCol).fill(""));
+              cellsToWrite.forEach((c2) => {
+                grid2[c2.row - 1][c2.col - 1] = c2.val;
+              });
+              const csv = "\uFEFF" + grid2.map((r2) => r2.map((c2) => `"${String(c2).replace(/"/g, '""')}"`).join(",")).join("\n");
+              const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+              const a2 = document.createElement("a");
+              a2.href = URL.createObjectURL(blob);
+              const dt = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+              a2.download = `relatorio_${exportConfig.level}_${dt}.csv`;
+              a2.click();
+              setExportLog({ type: "success", msg: `✅ ${allRows.length} ${exportConfig.level === "account" ? "conta(s)" : exportConfig.level === "campaign" ? "campanha(s)" : "conjunto(s)"} exportada(s) com sucesso!`, detail: `${cellsToWrite.length} células geradas. Arquivo CSV baixado.`, rows: allRows.length });
+            } catch (e3) {
+              console.error("Export error:", e3);
+              setExportLog({ type: "error", msg: "Erro ao exportar: " + e3.message });
+            } finally {
+              setExportLoading(false);
+            }
+          };
+          return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 18, fontWeight: 600, color: T.txt, marginBottom: 4, letterSpacing: "-.01em" }, children: "Exportador de Planilhas" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, color: T.mute, maxWidth: 520, lineHeight: 1.6 }, children: "Configure conta, período e métricas para gerar um relatório formatado pronto pra colar em Google Sheets ou Excel." })
+              ] }),
+              metaStatus === "connected" ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 10, background: "rgba(34,197,94,.1)", color: T.ok, borderRadius: 6, padding: "5px 10px", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { width: 6, height: 6, borderRadius: "50%", background: T.ok } }),
+                " Meta conectado"
+              ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10, background: "rgba(239,68,68,.1)", color: T.err, borderRadius: 6, padding: "5px 10px", fontWeight: 600 }, children: "⚠ BM desconectado" })
+            ] }),
+            metaStatus !== "connected" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "12px 16px", background: "rgba(99,102,241,.07)", border: `1px solid rgba(99,102,241,.2)`, borderRadius: 10, fontSize: 12, color: T.sub, display: "flex", alignItems: "center", gap: 10 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("circle", { cx: "7", cy: "7", r: "5.5", stroke: T.accent, strokeWidth: "1.2" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M7 6v4M7 4.5v-.5", stroke: T.accent, strokeWidth: "1.3", strokeLinecap: "round" })
+              ] }),
+              "Conecte o Business Manager na aba ",
+              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setView("connections"), style: { background: "none", border: "none", color: T.accent, cursor: "pointer", fontSize: 12, fontFamily: T.font, padding: 0, fontWeight: 500 }, children: "Conexões →" }),
+              " para começar."
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.5fr 1fr", gap: 14 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, overflow: "hidden" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "14px 18px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 24, height: 24, borderRadius: 6, background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: T.accent, fontFamily: T.mono }, children: "1" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Selecione as contas" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 10, color: T.mute, marginTop: 1 }, children: [
+                          exportConfig.accountIds.length,
+                          " de ",
+                          metaAccounts.length,
+                          " selecionada",
+                          exportConfig.accountIds.length !== 1 ? "s" : ""
+                        ] })
+                      ] })
+                    ] }),
+                    metaAccounts.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: toggleAllAccounts, style: { fontSize: 11, padding: "5px 12px", borderRadius: 7, border: `1px solid ${T.border}`, background: "transparent", color: T.sub, cursor: "pointer", fontFamily: T.font }, children: exportConfig.accountIds.length === metaAccounts.length ? "Desmarcar todas" : "Selecionar todas" })
+                  ] }),
+                  metaAccounts.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "24px 18px", textAlign: "center", fontSize: 12, color: T.mute }, children: "Conecte o Business Manager para ver as contas." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { maxHeight: 180, overflowY: "auto" }, children: metaAccounts.map((a2) => {
+                    const checked = exportConfig.accountIds.includes(a2.id);
+                    const init = a2.name.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase();
+                    return /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => toggleAccount(a2.id), style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", border: "none", background: checked ? "rgba(99,102,241,.06)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: T.font, width: "100%", borderBottom: `1px solid ${T.border}` }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 18, height: 18, borderRadius: 5, border: `1.5px solid ${checked ? T.accent : T.borderMid}`, background: checked ? T.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }, children: checked && /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "10", height: "10", viewBox: "0 0 12 12", fill: "none", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M2 6l3 3 5-6", stroke: "#fff", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }) }) }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 26, height: 26, borderRadius: 7, background: "rgba(0,129,251,.1)", border: "1px solid rgba(0,129,251,.18)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: T.meta, flexShrink: 0 }, children: init }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 500, color: T.txt, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }, children: a2.name }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, fontFamily: T.mono, marginTop: 1 }, children: a2.id })
+                      ] })
+                    ] }, a2.id);
+                  }) })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "16px 18px" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 24, height: 24, borderRadius: 6, background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: T.accent, fontFamily: T.mono }, children: "2" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Período e nível dos dados" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, marginTop: 1 }, children: "Define o que vai virar uma linha na planilha" })
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 14 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.sub, marginBottom: 8, fontWeight: 500 }, children: "Nível de detalhamento" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 3, background: "rgba(255,255,255,.04)", borderRadius: 9, padding: 3, border: `1px solid ${T.borderMid}` }, children: [{ v: "account", l: "Conta", d: "Métricas agregadas" }, { v: "campaign", l: "Campanha", d: "1 linha por campanha" }, { v: "adset", l: "Conjunto", d: "1 linha por conjunto" }].map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => setExportConfig((c2) => ({ ...c2, level: p2.v })), style: { flex: 1, padding: "8px 10px", borderRadius: 7, border: "none", cursor: "pointer", background: exportConfig.level === p2.v ? "rgba(99,102,241,.15)" : "transparent", color: exportConfig.level === p2.v ? T.accent : T.sub, fontFamily: T.font, textAlign: "left" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, fontWeight: exportConfig.level === p2.v ? 600 : 500, marginBottom: 2 }, children: p2.l }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute }, children: p2.d })
+                    ] }, p2.v)) })
+                  ] }),
+                  (() => {
+                    const expRightMonth = exportCalMonth === 11 ? 0 : exportCalMonth + 1;
+                    const expRightYear = exportCalMonth === 11 ? exportCalYear + 1 : exportCalYear;
+                    const expMonthFull = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+                    const expGetDays = (y2, m2) => {
+                      const first = new Date(y2, m2, 1).getDay();
+                      const days = new Date(y2, m2 + 1, 0).getDate();
+                      return { offset: (first + 6) % 7, days };
+                    };
+                    const expToISO = (y2, m2, d2) => `${y2}-${String(m2 + 1).padStart(2, "0")}-${String(d2).padStart(2, "0")}`;
+                    const expFromISO = (s2) => {
+                      if (!s2) return null;
+                      const [y2, m2, d2] = s2.split("-").map(Number);
+                      return new Date(y2, m2 - 1, d2);
+                    };
+                    const expIsStart = (y2, m2, d2) => expToISO(y2, m2, d2) === exportConfig.customRange.start;
+                    const expIsEnd = (y2, m2, d2) => expToISO(y2, m2, d2) === exportConfig.customRange.end;
+                    const expInRange = (y2, m2, d2) => {
+                      if (!exportConfig.customRange.start || !exportConfig.customRange.end) return false;
+                      const dt = new Date(y2, m2, d2);
+                      return dt > expFromISO(exportConfig.customRange.start) && dt < expFromISO(exportConfig.customRange.end);
+                    };
+                    const expToday = /* @__PURE__ */ new Date();
+                    const expIsToday = (y2, m2, d2) => expToISO(y2, m2, d2) === expToISO(expToday.getFullYear(), expToday.getMonth(), expToday.getDate());
+                    const expHandleDay = (y2, m2, d2) => {
+                      const iso = expToISO(y2, m2, d2);
+                      if (!exportConfig.customRange.selecting || !exportConfig.customRange.start) {
+                        setExportConfig((c2) => ({ ...c2, customRange: { start: iso, end: null, selecting: true } }));
+                      } else {
+                        const [s2, e3] = iso < exportConfig.customRange.start ? [iso, exportConfig.customRange.start] : [exportConfig.customRange.start, iso];
+                        setExportConfig((c2) => ({ ...c2, customRange: { start: s2, end: e3, selecting: false }, period: "custom" }));
+                        setExportShowPicker(false);
+                      }
+                    };
+                    const expRenderCal = (year, month) => {
+                      const { offset, days } = expGetDays(year, month);
+                      const cells = [];
+                      for (let i = 0; i < offset; i++) cells.push(null);
+                      for (let d2 = 1; d2 <= days; d2++) cells.push(d2);
+                      const weeks = [];
+                      for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+                      return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 200 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 12, color: T.txt, fontWeight: 500, textAlign: "center", marginBottom: 10 }, children: [
+                          expMonthFull[month],
+                          " ",
+                          year
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 0, fontSize: 9, color: T.mute, marginBottom: 6 }, children: ["S", "T", "Q", "Q", "S", "S", "D"].map((d2, i) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { textAlign: "center", fontWeight: 600, letterSpacing: ".05em" }, children: d2 }, i)) }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexDirection: "column", gap: 2 }, children: weeks.map((w2, wi2) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 0 }, children: w2.map((d2, di2) => {
+                          if (d2 === null) return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { height: 30 } }, di2);
+                          const start = expIsStart(year, month, d2);
+                          const end = expIsEnd(year, month, d2);
+                          const inR = expInRange(year, month, d2);
+                          const todayD = expIsToday(year, month, d2);
+                          return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { onClick: () => expHandleDay(year, month, d2), style: { height: 30, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, cursor: "pointer", borderRadius: start || end ? "50%" : "2px", background: start || end ? "#0081FB" : inR ? "rgba(0,129,251,.18)" : "transparent", color: start || end ? "#fff" : todayD ? "#0081FB" : T.txt, fontWeight: start || end || todayD ? 600 : 400 }, children: d2 }, di2);
+                        }) }, wi2)) })
+                      ] });
+                    };
+                    return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.sub, marginBottom: 8, fontWeight: 500 }, children: "Período" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { position: "relative" }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => setExportShowPicker(!exportShowPicker), style: { width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 10, border: `1px solid ${exportShowPicker ? T.meta + "66" : T.borderMid}`, background: exportShowPicker ? "rgba(0,129,251,.06)" : "rgba(255,255,255,.04)", color: T.txt, cursor: "pointer", fontFamily: T.font, fontSize: 13, transition: "all .15s" }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "13", height: "13", viewBox: "0 0 14 14", fill: "none", children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("rect", { x: "1", y: "2", width: "12", height: "11", rx: "2", stroke: T.meta, strokeWidth: "1.2" }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M1 5.5h12", stroke: T.meta, strokeWidth: "1.2" }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M4 1v3M10 1v3", stroke: T.meta, strokeWidth: "1.2", strokeLinecap: "round" })
+                          ] }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { flex: 1, textAlign: "left", color: T.meta, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, children: expActivePeriodLabel }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "11", height: "11", viewBox: "0 0 12 12", fill: "none", style: { flexShrink: 0, transform: exportShowPicker ? "rotate(180deg)" : "none", transition: "transform .2s" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M2 4.5l4 4 4-4", stroke: T.mute, strokeWidth: "1.3", strokeLinecap: "round", strokeLinejoin: "round" }) })
+                        ] }),
+                        exportShowPicker && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 200, background: "#131825", border: `1px solid ${T.borderMid}`, borderRadius: 14, boxShadow: "0 20px 60px rgba(0,0,0,.7)", display: isMobile ? "block" : "flex", minWidth: isMobile ? "100%" : 560, maxWidth: isMobile ? "100%" : "none" }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { width: isMobile ? "100%" : 170, borderRight: isMobile ? "none" : `1px solid ${T.border}`, borderBottom: isMobile ? `1px solid ${T.border}` : "none", padding: "10px 0", flexShrink: 0 }, children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".09em", padding: "0 14px 8px", fontWeight: 600 }, children: "USADOS RECENTEMENTE" }),
+                            expPresets.map((p2) => {
+                              const sel = exportConfig.period === p2.v;
+                              return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { onClick: () => {
+                                setExportConfig((c2) => ({ ...c2, period: p2.v, customRange: { start: null, end: null, selecting: false } }));
+                                setExportShowPicker(false);
+                              }, style: { padding: "8px 14px", fontSize: 12, color: sel ? T.txt : T.sub, cursor: "pointer", background: sel ? "rgba(255,255,255,.06)" : "transparent", display: "flex", alignItems: "center", gap: 8 }, onMouseEnter: (e3) => !sel && (e3.currentTarget.style.background = "rgba(255,255,255,.04)"), onMouseLeave: (e3) => !sel && (e3.currentTarget.style.background = sel ? "rgba(255,255,255,.06)" : "transparent"), children: [
+                                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { width: 7, height: 7, borderRadius: "50%", background: sel ? "#0081FB" : "transparent", flexShrink: 0, border: sel ? "none" : `1px solid ${T.border}` } }),
+                                p2.l
+                              ] }, p2.v);
+                            })
+                          ] }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, padding: 16, minWidth: 0 }, children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }, children: [
+                              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => {
+                                if (exportCalMonth === 0) {
+                                  setExportCalMonth(11);
+                                  setExportCalYear((y2) => y2 - 1);
+                                } else setExportCalMonth((m2) => m2 - 1);
+                              }, style: { background: "none", border: "none", color: T.sub, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "2px 8px" }, children: "‹" }),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.mute, fontWeight: 500 }, children: exportConfig.customRange.start && exportConfig.customRange.end ? `${exportConfig.customRange.start} → ${exportConfig.customRange.end}` : exportConfig.customRange.start ? "Selecione a data final" : "Selecione o período" }),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => {
+                                if (exportCalMonth === 11) {
+                                  setExportCalMonth(0);
+                                  setExportCalYear((y2) => y2 + 1);
+                                } else setExportCalMonth((m2) => m2 + 1);
+                              }, style: { background: "none", border: "none", color: T.sub, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "2px 8px" }, children: "›" })
+                            ] }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: isMobile ? "block" : "flex", gap: 20 }, children: [
+                              expRenderCal(exportCalYear, exportCalMonth),
+                              !isMobile && expRenderCal(expRightYear, expRightMonth)
+                            ] }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.border}` }, children: [
+                              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10, color: T.mute }, children: "Fuso: Horário de Brasília" }),
+                              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
+                                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => {
+                                  setExportShowPicker(false);
+                                  setExportConfig((c2) => ({ ...c2, customRange: { start: null, end: null, selecting: false } }));
+                                }, style: { padding: "7px 14px", borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.sub, fontSize: 11, cursor: "pointer", fontFamily: T.font }, children: "Cancelar" }),
+                                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => {
+                                  if (exportConfig.customRange.start && exportConfig.customRange.end) {
+                                    setExportConfig((c2) => ({ ...c2, period: "custom" }));
+                                    setExportShowPicker(false);
+                                  }
+                                }, disabled: !exportConfig.customRange.start || !exportConfig.customRange.end, style: { padding: "7px 14px", borderRadius: 8, border: "none", background: exportConfig.customRange.start && exportConfig.customRange.end ? "#0081FB" : "rgba(0,129,251,.3)", color: "#fff", fontSize: 11, fontWeight: 600, cursor: exportConfig.customRange.start && exportConfig.customRange.end ? "pointer" : "not-allowed", fontFamily: T.font }, children: "Atualizar" })
+                              ] })
+                            ] })
+                          ] })
+                        ] })
+                      ] })
+                    ] });
+                  })()
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "16px 18px" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 24, height: 24, borderRadius: 6, background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: T.accent, fontFamily: T.mono }, children: "3" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Quais métricas exportar?" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 10, color: T.mute, marginTop: 1 }, children: [
+                          exportConfig.metrics.length,
+                          " métrica",
+                          exportConfig.metrics.length !== 1 ? "s" : "",
+                          " selecionada",
+                          exportConfig.metrics.length !== 1 ? "s" : ""
+                        ] })
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 5 }, children: [{ v: "basic", l: "Básico" }, { v: "performance", l: "Performance" }, { v: "full", l: "Completo" }].map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => presetMetrics(p2.v), style: { fontSize: 10, padding: "4px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.sub, cursor: "pointer", fontFamily: T.font }, children: p2.l }, p2.v)) })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexDirection: "column", gap: 14 }, children: Object.entries(groupedMetrics).map(([cat, metrics]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 8 }, children: catLabels[cat] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: 6 }, children: metrics.map((m2) => {
+                      const checked = exportConfig.metrics.includes(m2.id);
+                      return /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => toggleMetric(m2.id), style: { display: "flex", alignItems: "center", gap: 7, padding: "8px 10px", borderRadius: 8, border: `1px solid ${checked ? T.accent + "55" : T.border}`, background: checked ? "rgba(99,102,241,.07)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: T.font }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13, flexShrink: 0 }, children: m2.icon }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, fontWeight: checked ? 600 : 500, color: checked ? T.txt : T.sub, flex: 1 }, children: m2.l }),
+                        checked && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.accent, fontSize: 11 }, children: "✓" })
+                      ] }, m2.id);
+                    }) })
+                  ] }, cat)) })
+                ] })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 14, position: isMobile ? "relative" : "sticky", top: isMobile ? "auto" : 14, height: "fit-content" }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "16px 18px" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 24, height: 24, borderRadius: 6, background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: T.accent, fontFamily: T.mono }, children: "4" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 600, color: T.txt }, children: "Formato de saída" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, marginTop: 1 }, children: "Como organizar os dados" })
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => setExportConfig((c2) => ({ ...c2, layout: "vertical" })), style: { padding: "12px 14px", borderRadius: 9, border: `1px solid ${exportConfig.layout === "vertical" ? T.accent + "55" : T.border}`, background: exportConfig.layout === "vertical" ? "rgba(99,102,241,.07)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: T.font }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13 }, children: "📋" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12, fontWeight: 600, color: exportConfig.layout === "vertical" ? T.accent : T.txt }, children: "Vertical (em blocos)" }),
+                        exportConfig.layout === "vertical" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { marginLeft: "auto", color: T.accent, fontSize: 11 }, children: "✓" })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, paddingLeft: 21 }, children: "Cada conta/campanha em um bloco separado, métricas em linhas. Como o template do print que você mandou." })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => setExportConfig((c2) => ({ ...c2, layout: "horizontal" })), style: { padding: "12px 14px", borderRadius: 9, border: `1px solid ${exportConfig.layout === "horizontal" ? T.accent + "55" : T.border}`, background: exportConfig.layout === "horizontal" ? "rgba(99,102,241,.07)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: T.font }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13 }, children: "📊" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12, fontWeight: 600, color: exportConfig.layout === "horizontal" ? T.accent : T.txt }, children: "Horizontal (tabela)" }),
+                        exportConfig.layout === "horizontal" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { marginLeft: "auto", color: T.accent, fontSize: 11 }, children: "✓" })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, paddingLeft: 21 }, children: "Cabeçalho na primeira linha, uma linha por conta/campanha. Formato tradicional de tabela." })
+                    ] })
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "14px 18px" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 10 }, children: "Resumo da exportação" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8, fontSize: 11 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.mute }, children: "Contas" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.txt, fontWeight: 500 }, children: exportConfig.accountIds.length || "—" })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.mute }, children: "Nível" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.txt, fontWeight: 500, textTransform: "capitalize" }, children: exportConfig.level === "account" ? "Conta" : exportConfig.level === "campaign" ? "Campanha" : "Conjunto" })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.mute }, children: "Período" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.txt, fontWeight: 500 }, children: expActivePeriodLabel })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.mute }, children: "Métricas" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.txt, fontWeight: 500 }, children: exportConfig.metrics.length })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.mute }, children: "Layout" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.txt, fontWeight: 500 }, children: exportConfig.layout === "vertical" ? "Vertical" : "Horizontal" })
+                    ] })
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: handleExport, disabled: !valid || exportLoading || metaStatus !== "connected", className: "btn-p", style: { padding: "14px 18px", borderRadius: 11, border: "none", background: valid && !exportLoading && metaStatus === "connected" ? T.accent : "rgba(99,102,241,.3)", color: "#fff", cursor: valid && !exportLoading && metaStatus === "connected" ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 600, fontFamily: T.font, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }, children: exportLoading ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { width: 14, height: 14, border: "2px solid rgba(255,255,255,.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin .7s linear infinite", display: "inline-block" } }),
+                  " Buscando dados..."
+                ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "14", height: "14", viewBox: "0 0 14 14", fill: "none", children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M7 1v8M3.5 5.5L7 9l3.5-3.5", stroke: "white", strokeWidth: "1.4", strokeLinecap: "round", strokeLinejoin: "round" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M2 11v1a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1", stroke: "white", strokeWidth: "1.4", strokeLinecap: "round" })
+                  ] }),
+                  " Gerar e baixar planilha (CSV)"
+                ] }) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "12px 14px", background: "rgba(99,102,241,.05)", border: "1px solid rgba(99,102,241,.15)", borderRadius: 10, fontSize: 10, color: T.mute, lineHeight: 1.6 }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.accent, letterSpacing: ".08em", fontWeight: 600, textTransform: "uppercase", marginBottom: 5 }, children: "📋 Como usar no Google Sheets" }),
+                  "Por enquanto a exportação gera um arquivo ",
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("strong", { style: { color: T.txt }, children: "CSV" }),
+                  " que você abre no Google Sheets via ",
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("strong", { style: { color: T.txt }, children: "Arquivo → Importar" }),
+                  ". Em breve teremos integração direta via OAuth para escrever na planilha automaticamente."
+                ] }),
+                exportLog && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "12px 14px", background: exportLog.type === "success" ? "rgba(34,197,94,.08)" : "rgba(239,68,68,.08)", border: `1px solid ${exportLog.type === "success" ? "rgba(34,197,94,.25)" : "rgba(239,68,68,.25)"}`, borderRadius: 10, fontSize: 11 }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: exportLog.type === "success" ? T.ok : T.err, fontWeight: 600, marginBottom: exportLog.detail ? 4 : 0 }, children: exportLog.msg }),
+                  exportLog.detail && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: T.sub, fontSize: 10 }, children: exportLog.detail })
+                ] })
               ] })
             ] })
           ] });
