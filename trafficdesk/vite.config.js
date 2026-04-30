@@ -4,11 +4,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: 'dist',
-    // Disable esbuild minification — fixes TDZ const ordering issues
-    // in large single-file components
+    outDir: '../public_build',  // ← pasta fora do trafficdesk, na raiz do repo
+    emptyOutDir: true,
     minify: false,
-    // Keep readable output for debugging
     sourcemap: false,
   },
 })
