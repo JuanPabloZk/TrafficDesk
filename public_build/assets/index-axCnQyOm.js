@@ -50989,6 +50989,7 @@ function Dashboard() {
   const [showBudgetForm, setShowBudgetForm] = reactExports.useState(false);
   const [newBudget, setNewBudget] = reactExports.useState({ name: "", accountId: "", currency: "BRL", limit: "", alertPct: 80, period: "monthly" });
   const [budgetAlerts, setBudgetAlerts] = reactExports.useState([]);
+  const [budgetFilter, setBudgetFilter] = reactExports.useState("all");
   const [clientSettings, setClientSettings] = reactExports.useState({});
   const [repLoading, setRepLoading] = reactExports.useState(false);
   const [repData, setRepData] = reactExports.useState(null);
@@ -52490,39 +52491,103 @@ function Dashboard() {
             return liveMetrics.reduce((s2, m2) => s2 + parseFloat(m2.investido), 0);
           };
           const barClr = (pct, ap) => pct >= 100 ? T.err : pct >= (ap || 80) ? T.warn : T.ok;
+          const daysRemaining = (period) => {
+            const today = /* @__PURE__ */ new Date();
+            if (period === "daily") return 1;
+            if (period === "weekly") {
+              const day = today.getDay();
+              return 7 - day;
+            }
+            const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+            return lastDay - today.getDate();
+          };
+          const daysElapsed = (period) => {
+            const today = /* @__PURE__ */ new Date();
+            if (period === "daily") return 1;
+            if (period === "weekly") return today.getDay() + 1;
+            return today.getDate();
+          };
+          const filteredRules = budgetRules.filter((rule) => {
+            if (budgetFilter === "all") return true;
+            const spent = getSpent(rule);
+            const pct = rule.limit_value > 0 ? spent / rule.limit_value * 100 : 0;
+            if (budgetFilter === "alert") return pct >= rule.alert_pct;
+            if (budgetFilter === "ok") return pct < rule.alert_pct;
+            return true;
+          });
+          const totalLimit = budgetRules.reduce((s2, r2) => s2 + parseFloat(r2.limit_value || 0), 0);
+          const totalSpent = budgetRules.reduce((s2, r2) => s2 + getSpent(r2), 0);
+          const inAlert = budgetRules.filter((r2) => {
+            const sp = getSpent(r2);
+            const pc2 = r2.limit_value > 0 ? sp / r2.limit_value * 100 : 0;
+            return pc2 >= r2.alert_pct;
+          }).length;
+          const exceeded = budgetRules.filter((r2) => {
+            const sp = getSpent(r2);
+            return sp >= r2.limit_value;
+          }).length;
           return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-            budgetAlerts.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(245,158,11,.08)", border: "1px solid rgba(245,158,11,.25)", borderRadius: 12, padding: "12px 16px", marginBottom: 16 }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 12, fontWeight: 600, color: T.warn, marginBottom: 6 }, children: [
-                "⚠ ",
-                budgetAlerts.length,
-                " regra",
-                budgetAlerts.length > 1 ? "s" : "",
-                " atingiu o limite de alerta"
+            budgetRules.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(4,1fr)", gap: 10, marginBottom: 14 }, children: [
+              { l: "Total comprometido", v: `R$ ${totalLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, sub: `${budgetRules.length} regra${budgetRules.length > 1 ? "s" : ""} ativa${budgetRules.length > 1 ? "s" : ""}`, c: T.accent, icon: "💰" },
+              { l: "Total investido", v: `R$ ${totalSpent.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, sub: totalLimit > 0 ? `${Math.round(totalSpent / totalLimit * 100)}% do limite` : "sem limite", c: totalSpent >= totalLimit ? T.err : totalSpent >= totalLimit * 0.8 ? T.warn : T.ok, icon: "📊" },
+              { l: "Em alerta", v: inAlert, sub: inAlert > 0 ? "requer atenção" : "tudo sob controle", c: inAlert > 0 ? T.warn : T.ok, icon: "⚠️" },
+              { l: "Limite atingido", v: exceeded, sub: exceeded > 0 ? "ultrapassou o limite" : "nenhuma estourou", c: exceeded > 0 ? T.err : T.ok, icon: "🛑" }
+            ].map((m2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 12, border: `1px solid ${T.border}`, padding: "14px 16px", position: "relative", overflow: "hidden" }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: 0, left: 0, right: 0, height: 2, background: m2.c } }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".09em", fontWeight: 600, textTransform: "uppercase" }, children: m2.l }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14 }, children: m2.icon })
               ] }),
-              budgetAlerts.map((a2) => {
-                const spent = getSpent(a2);
-                const pct = a2.limit_value > 0 ? Math.round(spent / a2.limit_value * 100) : 0;
-                return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 12, color: T.sub }, children: [
-                  "• ",
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.txt, fontWeight: 500 }, children: a2.name }),
-                  ": gastou ",
-                  fmtM(spent, a2.currency),
-                  " de ",
-                  fmtM(a2.limit_value, a2.currency),
-                  " — ",
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: T.warn, fontWeight: 600 }, children: [
-                    pct,
-                    "% utilizado"
-                  ] })
-                ] }, a2.id);
-              })
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: isMobile ? 16 : 20, color: T.txt, fontWeight: 500, marginBottom: 4 }, children: m2.v }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: m2.c, fontWeight: 500 }, children: m2.sub })
+            ] }, i)) }),
+            budgetAlerts.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: exceeded > 0 ? "rgba(239,68,68,.08)" : "rgba(245,158,11,.08)", border: `1px solid ${exceeded > 0 ? "rgba(239,68,68,.25)" : "rgba(245,158,11,.25)"}`, borderRadius: 12, padding: "12px 16px", marginBottom: 14 }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 24, height: 24, borderRadius: 6, background: exceeded > 0 ? "rgba(239,68,68,.15)" : "rgba(245,158,11,.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }, children: exceeded > 0 ? "🔴" : "⚠" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 12, fontWeight: 600, color: exceeded > 0 ? T.err : T.warn }, children: [
+                  budgetAlerts.length,
+                  " regra",
+                  budgetAlerts.length > 1 ? "s" : "",
+                  " ",
+                  exceeded > 0 ? "ultrapassaram" : "em alerta"
+                ] })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { paddingLeft: 34, fontSize: 11, color: T.sub, display: "flex", flexDirection: "column", gap: 3 }, children: [
+                budgetAlerts.slice(0, 3).map((a2) => {
+                  const spent = getSpent(a2);
+                  const pct = a2.limit_value > 0 ? Math.round(spent / a2.limit_value * 100) : 0;
+                  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                    "• ",
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.txt, fontWeight: 500 }, children: a2.name }),
+                    " — gastou ",
+                    fmtM(spent, a2.currency),
+                    " de ",
+                    fmtM(a2.limit_value, a2.currency),
+                    " ",
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: pct >= 100 ? T.err : T.warn, fontWeight: 600 }, children: [
+                      "(",
+                      pct,
+                      "%)"
+                    ] })
+                  ] }, a2.id);
+                }),
+                budgetAlerts.length > 3 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { color: T.mute }, children: [
+                  "+ ",
+                  budgetAlerts.length - 3,
+                  " regra",
+                  budgetAlerts.length - 3 > 1 ? "s" : ""
+                ] })
+              ] })
             ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }, children: [
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 13, fontWeight: 600, color: T.txt, marginBottom: 3 }, children: "Regras de Controle de Verba" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, color: T.mute }, children: "Defina limites e receba avisos. Nenhuma alteração nas contas." })
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.mute }, children: "Defina limites e receba avisos. Nenhuma alteração nas contas." })
               ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-p", onClick: () => setShowBudgetForm(!showBudgetForm), style: { padding: "9px 18px", borderRadius: 9, border: "none", background: T.accent, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: T.font }, children: "+ Nova Regra" })
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
+                budgetRules.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 3, background: "rgba(255,255,255,.04)", borderRadius: 9, padding: 3, border: `1px solid ${T.border}` }, children: [{ v: "all", l: `Todas (${budgetRules.length})` }, { v: "alert", l: `Em alerta (${inAlert})` }, { v: "ok", l: `OK (${budgetRules.length - inAlert})` }].map((f2) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setBudgetFilter(f2.v), style: { padding: "5px 11px", borderRadius: 7, border: "none", cursor: "pointer", fontFamily: T.font, background: budgetFilter === f2.v ? "rgba(99,102,241,.15)" : "transparent", color: budgetFilter === f2.v ? T.accent : T.sub, fontSize: 11, fontWeight: budgetFilter === f2.v ? 500 : 400 }, children: f2.l }, f2.v)) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-p", onClick: () => setShowBudgetForm(!showBudgetForm), style: { padding: "9px 18px", borderRadius: 9, border: "none", background: T.accent, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: T.font, whiteSpace: "nowrap" }, children: "+ Nova Regra" })
+              ] })
             ] }),
             showBudgetForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.borderMid}`, padding: "20px 22px", marginBottom: 16 }, children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 13, fontWeight: 600, color: T.txt, marginBottom: 14 }, children: "Nova Regra de Verba" }),
@@ -52581,66 +52646,106 @@ function Dashboard() {
               ] })
             ] }),
             budgetLoading && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { textAlign: "center", padding: "40px 0", color: T.mute, fontSize: 12 }, children: "Carregando regras..." }),
-            !budgetLoading && budgetRules.length === 0 && !showBudgetForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", padding: "50px 20px", textAlign: "center" }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 32, marginBottom: 12 }, children: "💰" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 15, fontWeight: 600, color: T.txt, marginBottom: 6 }, children: "Nenhuma regra de verba" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, color: T.mute, maxWidth: 320, lineHeight: 1.7, marginBottom: 16 }, children: "Crie regras para monitorar gastos e receber avisos antes de ultrapassar o limite." }),
+            !budgetLoading && budgetRules.length === 0 && !showBudgetForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 20px", textAlign: "center", background: T.card, borderRadius: 14, border: `1px dashed ${T.borderMid}` }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 56, height: 56, borderRadius: 16, background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, marginBottom: 14 }, children: "💰" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 16, fontWeight: 600, color: T.txt, marginBottom: 6 }, children: "Nenhuma regra de verba criada" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 13, color: T.mute, maxWidth: 380, lineHeight: 1.7, marginBottom: 18 }, children: "Crie regras para monitorar gastos por conta ou globalmente, e receba avisos antes de ultrapassar o limite." }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-p", onClick: () => setShowBudgetForm(true), style: { padding: "10px 22px", borderRadius: 10, border: "none", background: T.accent, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: T.font }, children: "+ Criar primeira regra" })
             ] }),
-            !budgetLoading && budgetRules.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexDirection: "column", gap: 12 }, children: budgetRules.map((rule) => {
+            !budgetLoading && budgetRules.length > 0 && filteredRules.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "center", padding: "40px 0", color: T.mute, fontSize: 12, background: T.card, borderRadius: 12, border: `1px dashed ${T.border}` }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 14, marginBottom: 6 }, children: "🔍" }),
+              "Nenhuma regra ",
+              budgetFilter === "alert" ? "em alerta" : "sem alertas",
+              " no momento"
+            ] }),
+            !budgetLoading && filteredRules.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexDirection: "column", gap: 12 }, children: filteredRules.map((rule) => {
               var _a2;
               const spent = getSpent(rule);
               const pct = rule.limit_value > 0 ? Math.min(Math.round(spent / rule.limit_value * 100), 100) : 0;
+              const realPct = rule.limit_value > 0 ? spent / rule.limit_value * 100 : 0;
               const bc2 = barClr(pct, rule.alert_pct);
               const triggered = pct >= rule.alert_pct;
+              const exceededRule = spent >= rule.limit_value;
               const accName = ((_a2 = metaAccounts.find((a2) => a2.id === rule.account_id)) == null ? void 0 : _a2.name) || "Todas as contas";
-              return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${triggered ? "rgba(245,158,11,.3)" : T.border}`, padding: "18px 22px" }, children: [
+              const periodLabel = rule.period === "monthly" ? "Mensal" : rule.period === "weekly" ? "Semanal" : "Diário";
+              const elapsed = daysElapsed(rule.period);
+              const remaining = daysRemaining(rule.period);
+              const dailyAvg = elapsed > 0 ? spent / elapsed : 0;
+              const projected = dailyAvg * (elapsed + remaining);
+              const willExceed = projected > rule.limit_value && !exceededRule;
+              const daysToExceed = dailyAvg > 0 ? Math.max(Math.ceil((rule.limit_value - spent) / dailyAvg), 0) : null;
+              return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${exceededRule ? "rgba(239,68,68,.3)" : triggered ? "rgba(245,158,11,.3)" : T.border}`, padding: "18px 22px", position: "relative", overflow: "hidden" }, children: [
+                triggered && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: 0, left: 0, right: 0, height: 2, background: exceededRule ? T.err : T.warn } }),
                 /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }, children: [
                       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14, fontWeight: 600, color: T.txt }, children: rule.name }),
-                      triggered && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tag", style: { background: pct >= 100 ? "rgba(239,68,68,.1)" : "rgba(245,158,11,.1)", color: pct >= 100 ? T.err : T.warn }, children: pct >= 100 ? "🔴 Limite atingido" : "⚠ Atenção" })
+                      exceededRule ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tag", style: { background: "rgba(239,68,68,.1)", color: T.err, fontSize: 10, fontWeight: 600 }, children: "🔴 Limite ultrapassado" }) : triggered ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tag", style: { background: "rgba(245,158,11,.1)", color: T.warn, fontSize: 10, fontWeight: 600 }, children: "⚠ Em alerta" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tag", style: { background: "rgba(34,197,94,.1)", color: T.ok, fontSize: 10, fontWeight: 600 }, children: "✓ Saudável" })
                     ] }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" }, children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, color: T.mute }, children: accName }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10, background: "rgba(255,255,255,.06)", borderRadius: 5, padding: "2px 8px", color: T.mute }, children: rule.period === "monthly" ? "Mensal" : rule.period === "weekly" ? "Semanal" : "Diário" })
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 11, color: T.mute, display: "flex", alignItems: "center", gap: 4 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("svg", { width: "11", height: "11", viewBox: "0 0 14 14", fill: "none", children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M7 1.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z", stroke: "currentColor", strokeWidth: "1.2" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M7 4v3l2 2", stroke: "currentColor", strokeWidth: "1.2", strokeLinecap: "round" })
+                        ] }),
+                        accName
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10, background: "rgba(255,255,255,.06)", borderRadius: 5, padding: "2px 8px", color: T.mute }, children: periodLabel }),
+                      willExceed && daysToExceed !== null && daysToExceed <= remaining && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 10, background: "rgba(239,68,68,.1)", color: T.err, borderRadius: 5, padding: "2px 8px", fontWeight: 500 }, children: [
+                        "📉 Vai estourar em ",
+                        daysToExceed,
+                        " dia",
+                        daysToExceed !== 1 ? "s" : ""
+                      ] })
                     ] })
                   ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => deleteBudgetRule(rule.id), style: { padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(239,68,68,.2)", background: "rgba(239,68,68,.06)", color: T.err, cursor: "pointer", fontSize: 11, fontFamily: T.font }, children: "Remover" })
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => deleteBudgetRule(rule.id), title: "Remover regra", style: { padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(239,68,68,.2)", background: "rgba(239,68,68,.06)", color: T.err, cursor: "pointer", fontSize: 11, fontFamily: T.font, display: "flex", alignItems: "center", gap: 5 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("svg", { width: "11", height: "11", viewBox: "0 0 14 14", fill: "none", children: /* @__PURE__ */ jsxRuntimeExports.jsx("path", { d: "M2 4h10M5.5 4V2.5h3V4M3.5 4l.5 8h6l.5-8", stroke: "currentColor", strokeWidth: "1.2", strokeLinecap: "round", strokeLinejoin: "round" }) }),
+                    "Remover"
+                  ] })
                 ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: 10, marginBottom: 14 }, children: [{ l: "Limite", v: fmtM(rule.limit_value, rule.currency), c: T.sub }, { l: "Gasto atual", v: fmtM(spent, rule.currency), c: bc2 }, { l: "Restante", v: fmtM(Math.max(rule.limit_value - spent, 0), rule.currency), c: rule.limit_value - spent < rule.limit_value * 0.1 ? T.err : T.ok }, { l: "Alerta em", v: fmtM(rule.limit_value * (rule.alert_pct / 100), rule.currency), c: T.warn }].map((m2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(255,255,255,.03)", borderRadius: 9, border: `1px solid ${T.border}`, padding: "9px 12px" }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 4 }, children: m2.l }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4,1fr)", gap: 10, marginBottom: 14 }, children: [
+                  { l: "Limite", v: fmtM(rule.limit_value, rule.currency), c: T.sub },
+                  { l: "Gasto atual", v: fmtM(spent, rule.currency), c: bc2 },
+                  { l: "Restante", v: fmtM(Math.max(rule.limit_value - spent, 0), rule.currency), c: rule.limit_value - spent < rule.limit_value * 0.1 ? T.err : T.ok },
+                  { l: "Projeção fim período", v: fmtM(projected, rule.currency), c: projected > rule.limit_value ? T.err : T.sub }
+                ].map((m2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(255,255,255,.03)", borderRadius: 9, border: `1px solid ${T.border}`, padding: "10px 12px" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 4, fontWeight: 500 }, children: m2.l }),
                   /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: 13, fontWeight: 500, color: m2.c }, children: m2.v })
                 ] }, i)) }),
                 /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 5 }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, color: T.sub }, children: "Progresso do período" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 11, color: T.sub }, children: [
+                      "Progresso do ",
+                      periodLabel.toLowerCase()
+                    ] }),
                     /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 12, fontFamily: T.mono, fontWeight: 600, color: bc2 }, children: [
-                      pct,
+                      realPct.toFixed(1),
                       "%"
                     ] })
                   ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(255,255,255,.07)", borderRadius: 100, height: 8, overflow: "hidden", position: "relative" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(255,255,255,.07)", borderRadius: 100, height: 10, overflow: "hidden", position: "relative" }, children: [
                     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: bc2, width: `${pct}%`, height: "100%", borderRadius: 100, transition: "width .4s ease" } }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: 0, bottom: 0, left: `${rule.alert_pct}%`, width: 2, background: T.warn, opacity: 0.7 } })
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: -2, bottom: -2, left: `${rule.alert_pct}%`, width: 2, background: T.warn, opacity: 0.9 } }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: -6, left: `calc(${rule.alert_pct}% - 4px)`, width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: `5px solid ${T.warn}`, opacity: 0.9 } })
                   ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 10, color: T.mute }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 10, color: T.mute, fontFamily: T.mono }, children: [
                     /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "0" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: T.warn }, children: [
-                      "▲",
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: T.warn, position: "absolute", left: `${rule.alert_pct}%`, transform: "translateX(-50%)", marginTop: -2, fontSize: 9 }, children: [
+                      "▲ ",
                       rule.alert_pct,
                       "%"
                     ] }),
                     /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: fmtM(rule.limit_value, rule.currency) })
                   ] })
                 ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginTop: 12, paddingTop: 10, borderTop: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }, children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, color: T.mute }, children: "Alertar em:" }),
-                  [60, 70, 80, 90, 95].map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => updateBudgetRule(rule.id, "alert_pct", p2), style: { padding: "3px 9px", borderRadius: 6, border: `1px solid ${rule.alert_pct === p2 ? T.warn + "88" : T.border}`, background: rule.alert_pct === p2 ? "rgba(245,158,11,.1)" : "transparent", color: rule.alert_pct === p2 ? T.warn : T.mute, fontSize: 11, fontFamily: T.font, cursor: "pointer" }, children: [
+                  [60, 70, 80, 90, 95].map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => updateBudgetRule(rule.id, "alert_pct", p2), style: { padding: "3px 9px", borderRadius: 6, border: `1px solid ${rule.alert_pct === p2 ? T.warn + "88" : T.border}`, background: rule.alert_pct === p2 ? "rgba(245,158,11,.1)" : "transparent", color: rule.alert_pct === p2 ? T.warn : T.mute, fontSize: 11, fontFamily: T.font, cursor: "pointer", transition: "all .15s" }, children: [
                     p2,
                     "%"
                   ] }, p2)),
-                  liveMetrics ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, color: T.ok, marginLeft: "auto" }, children: "✅ Dados em tempo real" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, color: T.mute, marginLeft: "auto" }, children: "⚡ Conecte o BM para dados reais" })
+                  liveMetrics ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, color: T.ok, marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }, children: "● Dados em tempo real" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, color: T.mute, marginLeft: "auto" }, children: "⚡ Conecte o BM para dados reais" })
                 ] })
               ] }, rule.id);
             }) })

@@ -224,6 +224,7 @@ export default function Dashboard(){
   const[showBudgetForm,setShowBudgetForm]=useState(false);
   const[newBudget,setNewBudget]=useState({name:"",accountId:"",currency:"BRL",limit:"",alertPct:80,period:"monthly"});
   const[budgetAlerts,setBudgetAlerts]=useState([]);
+  const[budgetFilter,setBudgetFilter]=useState("all");
   const[clientSettings,setClientSettings]=useState({});
   const[repLoading,setRepLoading]=useState(false);
   const[repData,setRepData]=useState(null);
@@ -1637,18 +1638,101 @@ export default function Dashboard(){
             const fmtM=(v,c)=>`${symb(c)} ${parseFloat(v).toLocaleString("pt-BR",{minimumFractionDigits:2})}`;
             const getSpent=(rule)=>{if(!liveMetrics)return 0;if(rule.account_id){const m=liveMetrics.find(d=>d.accountId===rule.account_id);return m?parseFloat(m.investido):0;}return liveMetrics.reduce((s,m)=>s+parseFloat(m.investido),0);};
             const barClr=(pct,ap)=>pct>=100?T.err:pct>=(ap||80)?T.warn:T.ok;
+
+            // Calcular dias restantes do período
+            const daysRemaining=(period)=>{
+              const today=new Date();
+              if(period==="daily")return 1;
+              if(period==="weekly"){
+                const day=today.getDay();
+                return 7-day;
+              }
+              // monthly
+              const lastDay=new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+              return lastDay-today.getDate();
+            };
+
+            // Projeção: ao ritmo atual, em quantos dias vai estourar?
+            const daysElapsed=(period)=>{
+              const today=new Date();
+              if(period==="daily")return 1;
+              if(period==="weekly")return today.getDay()+1;
+              return today.getDate();
+            };
+
+            // Filtrar regras
+            const filteredRules=budgetRules.filter(rule=>{
+              if(budgetFilter==="all")return true;
+              const spent=getSpent(rule);
+              const pct=rule.limit_value>0?(spent/rule.limit_value)*100:0;
+              if(budgetFilter==="alert")return pct>=rule.alert_pct;
+              if(budgetFilter==="ok")return pct<rule.alert_pct;
+              return true;
+            });
+
+            // Resumo geral
+            const totalLimit=budgetRules.reduce((s,r)=>s+parseFloat(r.limit_value||0),0);
+            const totalSpent=budgetRules.reduce((s,r)=>s+getSpent(r),0);
+            const inAlert=budgetRules.filter(r=>{const sp=getSpent(r);const pc=r.limit_value>0?(sp/r.limit_value)*100:0;return pc>=r.alert_pct;}).length;
+            const exceeded=budgetRules.filter(r=>{const sp=getSpent(r);return sp>=r.limit_value;}).length;
+
             return(
               <div>
-                {budgetAlerts.length>0&&(
-                  <div style={{background:"rgba(245,158,11,.08)",border:"1px solid rgba(245,158,11,.25)",borderRadius:12,padding:"12px 16px",marginBottom:16}}>
-                    <div style={{fontSize:12,fontWeight:600,color:T.warn,marginBottom:6}}>⚠ {budgetAlerts.length} regra{budgetAlerts.length>1?"s":""} atingiu o limite de alerta</div>
-                    {budgetAlerts.map(a=>{const spent=getSpent(a);const pct=a.limit_value>0?Math.round((spent/a.limit_value)*100):0;return(<div key={a.id} style={{fontSize:12,color:T.sub}}>• <span style={{color:T.txt,fontWeight:500}}>{a.name}</span>: gastou {fmtM(spent,a.currency)} de {fmtM(a.limit_value,a.currency)} — <span style={{color:T.warn,fontWeight:600}}>{pct}% utilizado</span></div>);})}
+                {/* ── HERO RESUMO ── */}
+                {budgetRules.length>0&&(
+                  <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(4,1fr)",gap:10,marginBottom:14}}>
+                    {[
+                      {l:"Total comprometido",v:`R$ ${totalLimit.toLocaleString("pt-BR",{minimumFractionDigits:2})}`,sub:`${budgetRules.length} regra${budgetRules.length>1?"s":""} ativa${budgetRules.length>1?"s":""}`,c:T.accent,icon:"💰"},
+                      {l:"Total investido",v:`R$ ${totalSpent.toLocaleString("pt-BR",{minimumFractionDigits:2})}`,sub:totalLimit>0?`${Math.round((totalSpent/totalLimit)*100)}% do limite`:"sem limite",c:totalSpent>=totalLimit?T.err:totalSpent>=totalLimit*.8?T.warn:T.ok,icon:"📊"},
+                      {l:"Em alerta",v:inAlert,sub:inAlert>0?"requer atenção":"tudo sob controle",c:inAlert>0?T.warn:T.ok,icon:"⚠️"},
+                      {l:"Limite atingido",v:exceeded,sub:exceeded>0?"ultrapassou o limite":"nenhuma estourou",c:exceeded>0?T.err:T.ok,icon:"🛑"},
+                    ].map((m,i)=>(
+                      <div key={i} className="card" style={{background:T.card,borderRadius:12,border:`1px solid ${T.border}`,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
+                        <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:m.c}}></div>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                          <div style={{fontSize:9,color:T.mute,letterSpacing:".09em",fontWeight:600,textTransform:"uppercase"}}>{m.l}</div>
+                          <span style={{fontSize:14}}>{m.icon}</span>
+                        </div>
+                        <div style={{fontFamily:T.mono,fontSize:isMobile?16:20,color:T.txt,fontWeight:500,marginBottom:4}}>{m.v}</div>
+                        <div style={{fontSize:10,color:m.c,fontWeight:500}}>{m.sub}</div>
+                      </div>
+                    ))}
                   </div>
                 )}
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
-                  <div><div style={{fontSize:13,fontWeight:600,color:T.txt,marginBottom:3}}>Regras de Controle de Verba</div><div style={{fontSize:12,color:T.mute}}>Defina limites e receba avisos. Nenhuma alteração nas contas.</div></div>
-                  <button className="btn-p" onClick={()=>setShowBudgetForm(!showBudgetForm)} style={{padding:"9px 18px",borderRadius:9,border:"none",background:T.accent,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:T.font}}>+ Nova Regra</button>
+
+                {/* ── BANNER DE ALERTA ── */}
+                {budgetAlerts.length>0&&(
+                  <div style={{background:exceeded>0?"rgba(239,68,68,.08)":"rgba(245,158,11,.08)",border:`1px solid ${exceeded>0?"rgba(239,68,68,.25)":"rgba(245,158,11,.25)"}`,borderRadius:12,padding:"12px 16px",marginBottom:14}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                      <div style={{width:24,height:24,borderRadius:6,background:exceeded>0?"rgba(239,68,68,.15)":"rgba(245,158,11,.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>{exceeded>0?"🔴":"⚠"}</div>
+                      <div style={{fontSize:12,fontWeight:600,color:exceeded>0?T.err:T.warn}}>{budgetAlerts.length} regra{budgetAlerts.length>1?"s":""} {exceeded>0?"ultrapassaram":"em alerta"}</div>
+                    </div>
+                    <div style={{paddingLeft:34,fontSize:11,color:T.sub,display:"flex",flexDirection:"column",gap:3}}>
+                      {budgetAlerts.slice(0,3).map(a=>{const spent=getSpent(a);const pct=a.limit_value>0?Math.round((spent/a.limit_value)*100):0;return(<div key={a.id}>• <span style={{color:T.txt,fontWeight:500}}>{a.name}</span> — gastou {fmtM(spent,a.currency)} de {fmtM(a.limit_value,a.currency)} <span style={{color:pct>=100?T.err:T.warn,fontWeight:600}}>({pct}%)</span></div>);})}
+                      {budgetAlerts.length>3&&<div style={{color:T.mute}}>+ {budgetAlerts.length-3} regra{budgetAlerts.length-3>1?"s":""}</div>}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── HEADER + FILTROS ── */}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:600,color:T.txt,marginBottom:3}}>Regras de Controle de Verba</div>
+                    <div style={{fontSize:11,color:T.mute}}>Defina limites e receba avisos. Nenhuma alteração nas contas.</div>
+                  </div>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    {budgetRules.length>0&&(
+                      <div style={{display:"flex",gap:3,background:"rgba(255,255,255,.04)",borderRadius:9,padding:3,border:`1px solid ${T.border}`}}>
+                        {[{v:"all",l:`Todas (${budgetRules.length})`},{v:"alert",l:`Em alerta (${inAlert})`},{v:"ok",l:`OK (${budgetRules.length-inAlert})`}].map(f=>(
+                          <button key={f.v} onClick={()=>setBudgetFilter(f.v)} style={{padding:"5px 11px",borderRadius:7,border:"none",cursor:"pointer",fontFamily:T.font,background:budgetFilter===f.v?"rgba(99,102,241,.15)":"transparent",color:budgetFilter===f.v?T.accent:T.sub,fontSize:11,fontWeight:budgetFilter===f.v?500:400}}>{f.l}</button>
+                        ))}
+                      </div>
+                    )}
+                    <button className="btn-p" onClick={()=>setShowBudgetForm(!showBudgetForm)} style={{padding:"9px 18px",borderRadius:9,border:"none",background:T.accent,color:"#fff",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:T.font,whiteSpace:"nowrap"}}>+ Nova Regra</button>
+                  </div>
                 </div>
+
+                {/* ── FORM DE NOVA REGRA ── */}
                 {showBudgetForm&&(
                   <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.borderMid}`,padding:"20px 22px",marginBottom:16}}>
                     <div style={{fontSize:13,fontWeight:600,color:T.txt,marginBottom:14}}>Nova Regra de Verba</div>
@@ -1685,55 +1769,104 @@ export default function Dashboard(){
                     </div>
                   </div>
                 )}
+
+                {/* ── EMPTY STATES ── */}
                 {budgetLoading&&<div style={{textAlign:"center",padding:"40px 0",color:T.mute,fontSize:12}}>Carregando regras...</div>}
                 {!budgetLoading&&budgetRules.length===0&&!showBudgetForm&&(
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"50px 20px",textAlign:"center"}}>
-                    <div style={{fontSize:32,marginBottom:12}}>💰</div>
-                    <div style={{fontSize:15,fontWeight:600,color:T.txt,marginBottom:6}}>Nenhuma regra de verba</div>
-                    <div style={{fontSize:12,color:T.mute,maxWidth:320,lineHeight:1.7,marginBottom:16}}>Crie regras para monitorar gastos e receber avisos antes de ultrapassar o limite.</div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"60px 20px",textAlign:"center",background:T.card,borderRadius:14,border:`1px dashed ${T.borderMid}`}}>
+                    <div style={{width:56,height:56,borderRadius:16,background:"rgba(99,102,241,.08)",border:"1px solid rgba(99,102,241,.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,marginBottom:14}}>💰</div>
+                    <div style={{fontSize:16,fontWeight:600,color:T.txt,marginBottom:6}}>Nenhuma regra de verba criada</div>
+                    <div style={{fontSize:13,color:T.mute,maxWidth:380,lineHeight:1.7,marginBottom:18}}>Crie regras para monitorar gastos por conta ou globalmente, e receba avisos antes de ultrapassar o limite.</div>
                     <button className="btn-p" onClick={()=>setShowBudgetForm(true)} style={{padding:"10px 22px",borderRadius:10,border:"none",background:T.accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:T.font}}>+ Criar primeira regra</button>
                   </div>
                 )}
-                {!budgetLoading&&budgetRules.length>0&&(
+                {!budgetLoading&&budgetRules.length>0&&filteredRules.length===0&&(
+                  <div style={{textAlign:"center",padding:"40px 0",color:T.mute,fontSize:12,background:T.card,borderRadius:12,border:`1px dashed ${T.border}`}}>
+                    <div style={{fontSize:14,marginBottom:6}}>🔍</div>
+                    Nenhuma regra {budgetFilter==="alert"?"em alerta":"sem alertas"} no momento
+                  </div>
+                )}
+
+                {/* ── LISTA DE REGRAS ── */}
+                {!budgetLoading&&filteredRules.length>0&&(
                   <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                    {budgetRules.map(rule=>{
+                    {filteredRules.map(rule=>{
                       const spent=getSpent(rule);
                       const pct=rule.limit_value>0?Math.min(Math.round((spent/rule.limit_value)*100),100):0;
+                      const realPct=rule.limit_value>0?(spent/rule.limit_value)*100:0;
                       const bc=barClr(pct,rule.alert_pct);
                       const triggered=pct>=rule.alert_pct;
+                      const exceededRule=spent>=rule.limit_value;
                       const accName=metaAccounts.find(a=>a.id===rule.account_id)?.name||"Todas as contas";
+                      const periodLabel=rule.period==="monthly"?"Mensal":rule.period==="weekly"?"Semanal":"Diário";
+
+                      // Projeção
+                      const elapsed=daysElapsed(rule.period);
+                      const remaining=daysRemaining(rule.period);
+                      const dailyAvg=elapsed>0?spent/elapsed:0;
+                      const projected=dailyAvg*(elapsed+remaining);
+                      const willExceed=projected>rule.limit_value&&!exceededRule;
+                      const daysToExceed=dailyAvg>0?Math.max(Math.ceil((rule.limit_value-spent)/dailyAvg),0):null;
+
                       return(
-                        <div key={rule.id} className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${triggered?"rgba(245,158,11,.3)":T.border}`,padding:"18px 22px"}}>
+                        <div key={rule.id} className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${exceededRule?"rgba(239,68,68,.3)":triggered?"rgba(245,158,11,.3)":T.border}`,padding:"18px 22px",position:"relative",overflow:"hidden"}}>
+                          {triggered&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:exceededRule?T.err:T.warn}}></div>}
                           <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
-                            <div>
-                              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
                                 <span style={{fontSize:14,fontWeight:600,color:T.txt}}>{rule.name}</span>
-                                {triggered&&<span className="tag" style={{background:pct>=100?"rgba(239,68,68,.1)":"rgba(245,158,11,.1)",color:pct>=100?T.err:T.warn}}>{pct>=100?"🔴 Limite atingido":"⚠ Atenção"}</span>}
+                                {exceededRule?<span className="tag" style={{background:"rgba(239,68,68,.1)",color:T.err,fontSize:10,fontWeight:600}}>🔴 Limite ultrapassado</span>:triggered?<span className="tag" style={{background:"rgba(245,158,11,.1)",color:T.warn,fontSize:10,fontWeight:600}}>⚠ Em alerta</span>:<span className="tag" style={{background:"rgba(34,197,94,.1)",color:T.ok,fontSize:10,fontWeight:600}}>✓ Saudável</span>}
                               </div>
-                              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}><span style={{fontSize:11,color:T.mute}}>{accName}</span><span style={{fontSize:10,background:"rgba(255,255,255,.06)",borderRadius:5,padding:"2px 8px",color:T.mute}}>{rule.period==="monthly"?"Mensal":rule.period==="weekly"?"Semanal":"Diário"}</span></div>
+                              <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                                <span style={{fontSize:11,color:T.mute,display:"flex",alignItems:"center",gap:4}}>
+                                  <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M7 1.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11z" stroke="currentColor" strokeWidth="1.2"/><path d="M7 4v3l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                                  {accName}
+                                </span>
+                                <span style={{fontSize:10,background:"rgba(255,255,255,.06)",borderRadius:5,padding:"2px 8px",color:T.mute}}>{periodLabel}</span>
+                                {willExceed&&daysToExceed!==null&&daysToExceed<=remaining&&<span style={{fontSize:10,background:"rgba(239,68,68,.1)",color:T.err,borderRadius:5,padding:"2px 8px",fontWeight:500}}>📉 Vai estourar em {daysToExceed} dia{daysToExceed!==1?"s":""}</span>}
+                              </div>
                             </div>
-                            <button onClick={()=>deleteBudgetRule(rule.id)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid rgba(239,68,68,.2)",background:"rgba(239,68,68,.06)",color:T.err,cursor:"pointer",fontSize:11,fontFamily:T.font}}>Remover</button>
+                            <button onClick={()=>deleteBudgetRule(rule.id)} title="Remover regra" style={{padding:"6px 10px",borderRadius:8,border:"1px solid rgba(239,68,68,.2)",background:"rgba(239,68,68,.06)",color:T.err,cursor:"pointer",fontSize:11,fontFamily:T.font,display:"flex",alignItems:"center",gap:5}}>
+                              <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M5.5 4V2.5h3V4M3.5 4l.5 8h6l.5-8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              Remover
+                            </button>
                           </div>
                           <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:14}}>
-                            {[{l:"Limite",v:fmtM(rule.limit_value,rule.currency),c:T.sub},{l:"Gasto atual",v:fmtM(spent,rule.currency),c:bc},{l:"Restante",v:fmtM(Math.max(rule.limit_value-spent,0),rule.currency),c:rule.limit_value-spent<rule.limit_value*.1?T.err:T.ok},{l:"Alerta em",v:fmtM(rule.limit_value*(rule.alert_pct/100),rule.currency),c:T.warn}].map((m,i)=>(
-                              <div key={i} style={{background:"rgba(255,255,255,.03)",borderRadius:9,border:`1px solid ${T.border}`,padding:"9px 12px"}}>
-                                <div style={{fontSize:9,color:T.mute,letterSpacing:".07em",textTransform:"uppercase",marginBottom:4}}>{m.l}</div>
+                            {[
+                              {l:"Limite",v:fmtM(rule.limit_value,rule.currency),c:T.sub},
+                              {l:"Gasto atual",v:fmtM(spent,rule.currency),c:bc},
+                              {l:"Restante",v:fmtM(Math.max(rule.limit_value-spent,0),rule.currency),c:rule.limit_value-spent<rule.limit_value*.1?T.err:T.ok},
+                              {l:"Projeção fim período",v:fmtM(projected,rule.currency),c:projected>rule.limit_value?T.err:T.sub},
+                            ].map((m,i)=>(
+                              <div key={i} style={{background:"rgba(255,255,255,.03)",borderRadius:9,border:`1px solid ${T.border}`,padding:"10px 12px"}}>
+                                <div style={{fontSize:9,color:T.mute,letterSpacing:".07em",textTransform:"uppercase",marginBottom:4,fontWeight:500}}>{m.l}</div>
                                 <div style={{fontFamily:T.mono,fontSize:13,fontWeight:500,color:m.c}}>{m.v}</div>
                               </div>
                             ))}
                           </div>
                           <div>
-                            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:11,color:T.sub}}>Progresso do período</span><span style={{fontSize:12,fontFamily:T.mono,fontWeight:600,color:bc}}>{pct}%</span></div>
-                            <div style={{background:"rgba(255,255,255,.07)",borderRadius:100,height:8,overflow:"hidden",position:"relative"}}>
-                              <div style={{background:bc,width:`${pct}%`,height:"100%",borderRadius:100,transition:"width .4s ease"}}></div>
-                              <div style={{position:"absolute",top:0,bottom:0,left:`${rule.alert_pct}%`,width:2,background:T.warn,opacity:.7}}/>
+                            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                              <span style={{fontSize:11,color:T.sub}}>Progresso do {periodLabel.toLowerCase()}</span>
+                              <span style={{fontSize:12,fontFamily:T.mono,fontWeight:600,color:bc}}>{realPct.toFixed(1)}%</span>
                             </div>
-                            <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:10,color:T.mute}}><span>0</span><span style={{color:T.warn}}>▲{rule.alert_pct}%</span><span>{fmtM(rule.limit_value,rule.currency)}</span></div>
+                            <div style={{background:"rgba(255,255,255,.07)",borderRadius:100,height:10,overflow:"hidden",position:"relative"}}>
+                              <div style={{background:bc,width:`${pct}%`,height:"100%",borderRadius:100,transition:"width .4s ease"}}></div>
+                              {/* Marcador do alerta */}
+                              <div style={{position:"absolute",top:-2,bottom:-2,left:`${rule.alert_pct}%`,width:2,background:T.warn,opacity:.9}}/>
+                              <div style={{position:"absolute",top:-6,left:`calc(${rule.alert_pct}% - 4px)`,width:0,height:0,borderLeft:"4px solid transparent",borderRight:"4px solid transparent",borderTop:`5px solid ${T.warn}`,opacity:.9}}/>
+                            </div>
+                            <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:10,color:T.mute,fontFamily:T.mono}}>
+                              <span>0</span>
+                              <span style={{color:T.warn,position:"absolute",left:`${rule.alert_pct}%`,transform:"translateX(-50%)",marginTop:-2,fontSize:9}}>▲ {rule.alert_pct}%</span>
+                              <span>{fmtM(rule.limit_value,rule.currency)}</span>
+                            </div>
                           </div>
-                          <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                          <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                             <span style={{fontSize:11,color:T.mute}}>Alertar em:</span>
-                            {[60,70,80,90,95].map(p=>(<button key={p} onClick={()=>updateBudgetRule(rule.id,"alert_pct",p)} style={{padding:"3px 9px",borderRadius:6,border:`1px solid ${rule.alert_pct===p?T.warn+"88":T.border}`,background:rule.alert_pct===p?"rgba(245,158,11,.1)":"transparent",color:rule.alert_pct===p?T.warn:T.mute,fontSize:11,fontFamily:T.font,cursor:"pointer"}}>{p}%</button>))}
-                            {liveMetrics?<span style={{fontSize:11,color:T.ok,marginLeft:"auto"}}>✅ Dados em tempo real</span>:<span style={{fontSize:11,color:T.mute,marginLeft:"auto"}}>⚡ Conecte o BM para dados reais</span>}
+                            {[60,70,80,90,95].map(p=>(
+                              <button key={p} onClick={()=>updateBudgetRule(rule.id,"alert_pct",p)} style={{padding:"3px 9px",borderRadius:6,border:`1px solid ${rule.alert_pct===p?T.warn+"88":T.border}`,background:rule.alert_pct===p?"rgba(245,158,11,.1)":"transparent",color:rule.alert_pct===p?T.warn:T.mute,fontSize:11,fontFamily:T.font,cursor:"pointer",transition:"all .15s"}}>{p}%</button>
+                            ))}
+                            {liveMetrics?<span style={{fontSize:11,color:T.ok,marginLeft:"auto",display:"flex",alignItems:"center",gap:5}}>● Dados em tempo real</span>:<span style={{fontSize:11,color:T.mute,marginLeft:"auto"}}>⚡ Conecte o BM para dados reais</span>}
                           </div>
                         </div>
                       );
