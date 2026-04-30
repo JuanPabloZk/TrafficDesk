@@ -28563,13 +28563,8 @@ function shouldShowDeprecationWarning() {
   return parseInt(versionMatch[1], 10) <= 18;
 }
 if (shouldShowDeprecationWarning()) console.warn("⚠️  Node.js 18 and below are deprecated and will no longer be supported in future versions of @supabase/supabase-js. Please upgrade to Node.js 20 or later. For more information, visit: https://github.com/orgs/supabase/discussions/37217");
-const supabaseUrl = void 0;
-const supabaseKey = void 0;
-{
-  throw new Error(
-    "Supabase não configurado. Crie o arquivo .env com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY."
-  );
-}
+const supabaseUrl = "https://yhfehztvdbvfghxzwelb.supabase.co";
+const supabaseKey = "sb_publishable_1g2CaxtnStOz_eTHuOlC1g_jyNQTYI2";
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     persistSession: true,
