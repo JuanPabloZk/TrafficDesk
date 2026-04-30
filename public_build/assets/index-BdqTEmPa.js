@@ -51133,30 +51133,55 @@ function Dashboard() {
     }
   }
   async function saveConnection(platform, token, bmId, accounts) {
-    if (!(user == null ? void 0 : user.id)) return;
-    await supabase.from("connections").upsert({ user_id: user.id, platform, access_token: token, bm_id: bmId, status: "connected", connected_at: (/* @__PURE__ */ new Date()).toISOString(), updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id,platform" });
-    localStorage.setItem(`td_${platform}_accounts`, JSON.stringify(accounts));
-    if ((accounts == null ? void 0 : accounts.length) > 0) {
-      const clientRows = accounts.map((a2) => ({
+    if (!(user == null ? void 0 : user.id)) {
+      console.warn("saveConnection: no user");
+      return;
+    }
+    try {
+      const { error: connErr } = await supabase.from("connections").upsert({
         user_id: user.id,
-        account_id: a2.id,
         platform,
-        name: a2.name,
-        short: a2.name.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase(),
-        platforms: [platform],
-        currency: a2.currency || "BRL",
-        status: a2.status === "active" ? "active" : "paused",
-        last_synced_at: (/* @__PURE__ */ new Date()).toISOString(),
-        is_archived: false
-      }));
-      await supabase.from("clients").upsert(clientRows, { onConflict: "user_id,account_id,platform" });
+        access_token: token,
+        bm_id: bmId,
+        status: "connected",
+        connected_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      }, { onConflict: "user_id,platform" });
+      if (connErr) console.error("saveConnection (connections):", connErr);
+      localStorage.setItem(`td_${platform}_accounts`, JSON.stringify(accounts));
+      if ((accounts == null ? void 0 : accounts.length) > 0) {
+        const clientRows = accounts.map((a2) => ({
+          user_id: user.id,
+          account_id: a2.id,
+          platform,
+          name: a2.name,
+          short: a2.name.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase(),
+          platforms: [platform],
+          currency: a2.currency || "BRL",
+          status: a2.status === "active" ? "active" : "paused",
+          last_synced_at: (/* @__PURE__ */ new Date()).toISOString(),
+          is_archived: false
+        }));
+        const { error: cliErr } = await supabase.from("clients").upsert(clientRows, { onConflict: "user_id,account_id,platform" });
+        if (cliErr) console.error("saveConnection (clients):", cliErr);
+      }
+    } catch (e3) {
+      console.error("saveConnection error:", e3);
     }
   }
   async function loadSavedClients(platform) {
     if (!(user == null ? void 0 : user.id)) return [];
-    const { data, error } = await supabase.from("clients").select("*").eq("user_id", user.id).eq("platform", platform).eq("is_archived", false).order("name");
-    if (error || !data) return [];
-    return data.map((c2) => ({ id: c2.account_id, name: c2.name, status: c2.status, currency: c2.currency || "BRL", spend: "R$ 0,00" }));
+    try {
+      const { data, error } = await supabase.from("clients").select("*").eq("user_id", user.id).eq("platform", platform).eq("is_archived", false).order("name");
+      if (error) {
+        console.error("loadSavedClients:", error);
+        return [];
+      }
+      return (data || []).map((c2) => ({ id: c2.account_id, name: c2.name, status: c2.status, currency: c2.currency || "BRL", spend: "R$ 0,00" }));
+    } catch (e3) {
+      console.error("loadSavedClients error:", e3);
+      return [];
+    }
   }
   async function clearConnection(platform) {
     if (!(user == null ? void 0 : user.id)) return;
@@ -51185,78 +51210,97 @@ function Dashboard() {
   reactExports.useEffect(() => {
     if (!(user == null ? void 0 : user.id)) return;
     (async () => {
-      const { data: tData } = await supabase.from("tasks").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-      if (tData) setTasks(tData.map((t2) => ({ id: t2.id, title: t2.title, client: t2.client || "", status: t2.status, priority: t2.priority, due: t2.due || "–" })));
-      const { data: waData } = await supabase.from("wa_campaigns").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-      if (waData) setWaCampaigns(waData.map((c2) => ({ id: c2.id, name: c2.name, client: c2.client || "", status: c2.status, total: c2.total || 0, sent: c2.sent || 0, delivered: c2.delivered || 0, read: c2.read_count || 0, replied: c2.replied || 0, converted: c2.converted || 0, createdAt: new Date(c2.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }), scheduledAt: c2.scheduled_at || "", msg: c2.msg || "" })));
-      const { data: aData } = await supabase.from("alerts").select("*").eq("user_id", user.id).eq("resolved", false).order("created_at", { ascending: false }).limit(20);
-      if (aData) setAlerts(aData.map((a2) => ({ id: a2.id, sev: a2.severity, client: a2.client || "", msg: a2.message || "", age: timeAgo(a2.created_at), plat: a2.platform || "meta", resolved: false, auto_generated: a2.auto_generated })));
-      const { data: brData } = await supabase.from("budget_rules").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-      if (brData) setBudgetRules(brData);
-      setBudgetLoading(false);
-      const { data: csData } = await supabase.from("client_settings").select("*").eq("user_id", user.id);
-      if (csData) {
-        const map2 = {};
-        csData.forEach((s2) => {
-          map2[`${s2.platform}_${s2.account_id}`] = s2;
-        });
-        setClientSettings(map2);
-      }
-      const { data: pData } = await supabase.from("user_preferences").select("*").eq("user_id", user.id).single().catch(() => ({ data: null }));
-      if (pData == null ? void 0 : pData.dash_period) setDashPeriod(pData.dash_period);
-      const { data: connData } = await supabase.from("connections").select("*").eq("user_id", user.id).eq("status", "connected");
-      if (connData == null ? void 0 : connData.length) {
-        for (const conn of connData) {
-          if (conn.platform === "meta" && conn.access_token && conn.bm_id) {
-            setMetaForm((f2) => ({ ...f2, accessToken: conn.access_token, bmId: conn.bm_id }));
-            setSavedToken(conn.access_token);
-            const savedClients = await loadSavedClients("meta");
-            if (savedClients.length > 0) {
-              setMetaAccounts(savedClients);
-              setMetaStatus("connected");
-              setMetaStep(2);
-              localStorage.setItem("td_meta_accounts", JSON.stringify(savedClients));
-              await fetchInsights(savedClients, conn.access_token, dashPeriod);
-              continue;
-            }
-            const cached = localStorage.getItem("td_meta_accounts");
-            if (cached) {
-              const accs = JSON.parse(cached);
-              setMetaAccounts(accs);
-              setMetaStatus("connected");
-              setMetaStep(2);
-              await saveConnection("meta", conn.access_token, conn.bm_id, accs);
-              await fetchInsights(accs, conn.access_token, dashPeriod);
-              continue;
-            }
-            try {
-              const res = await fetch(`${GRAPH}/${conn.bm_id}/owned_ad_accounts?fields=id,name,account_status,currency,amount_spent&access_token=${conn.access_token}&limit=20`);
-              const d2 = await res.json();
-              if (!d2.error && d2.data) {
-                const accs = d2.data.map((a2) => ({ id: a2.id.replace("act_", ""), name: a2.name, status: a2.account_status === 1 ? "active" : "inactive", currency: a2.currency || "BRL", spend: "R$ 0,00" }));
+      try {
+        const { data: tData, error: tErr } = await supabase.from("tasks").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+        if (tErr) console.error("load tasks:", tErr);
+        else if (tData) setTasks(tData.map((t2) => ({ id: t2.id, title: t2.title, client: t2.client || "", status: t2.status, priority: t2.priority, due: t2.due || "–" })));
+        const { data: waData, error: waErr } = await supabase.from("wa_campaigns").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+        if (waErr) console.error("load wa_campaigns:", waErr);
+        else if (waData) setWaCampaigns(waData.map((c2) => ({ id: c2.id, name: c2.name, client: c2.client || "", status: c2.status, total: c2.total || 0, sent: c2.sent || 0, delivered: c2.delivered || 0, read: c2.read_count || 0, replied: c2.replied || 0, converted: c2.converted || 0, createdAt: new Date(c2.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }), scheduledAt: c2.scheduled_at || "", msg: c2.msg || "" })));
+        const { data: aData, error: aErr } = await supabase.from("alerts").select("*").eq("user_id", user.id).eq("resolved", false).order("created_at", { ascending: false }).limit(20);
+        if (aErr) console.error("load alerts:", aErr);
+        else if (aData) setAlerts(aData.map((a2) => ({ id: a2.id, sev: a2.severity, client: a2.client || "", msg: a2.message || "", age: timeAgo(a2.created_at), plat: a2.platform || "meta", resolved: false, auto_generated: a2.auto_generated })));
+        const { data: brData, error: brErr } = await supabase.from("budget_rules").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+        if (brErr) console.error("load budget_rules:", brErr);
+        else if (brData) setBudgetRules(brData);
+        setBudgetLoading(false);
+        const { data: csData, error: csErr } = await supabase.from("client_settings").select("*").eq("user_id", user.id);
+        if (csErr) console.error("load client_settings:", csErr);
+        else if (csData) {
+          const map2 = {};
+          csData.forEach((s2) => {
+            map2[`${s2.platform}_${s2.account_id}`] = s2;
+          });
+          setClientSettings(map2);
+        }
+        let pData = null;
+        try {
+          const { data } = await supabase.from("user_preferences").select("*").eq("user_id", user.id).maybeSingle();
+          pData = data;
+        } catch (e3) {
+          console.error("load user_preferences:", e3);
+        }
+        if (pData == null ? void 0 : pData.dash_period) setDashPeriod(pData.dash_period);
+        const { data: connData } = await supabase.from("connections").select("*").eq("user_id", user.id).eq("status", "connected");
+        if (connData == null ? void 0 : connData.length) {
+          for (const conn of connData) {
+            if (conn.platform === "meta" && conn.access_token && conn.bm_id) {
+              setMetaForm((f2) => ({ ...f2, accessToken: conn.access_token, bmId: conn.bm_id }));
+              setSavedToken(conn.access_token);
+              const savedClients = await loadSavedClients("meta");
+              if (savedClients.length > 0) {
+                setMetaAccounts(savedClients);
+                setMetaStatus("connected");
+                setMetaStep(2);
+                localStorage.setItem("td_meta_accounts", JSON.stringify(savedClients));
+                await fetchInsights(savedClients, conn.access_token, dashPeriod);
+                continue;
+              }
+              const cached = localStorage.getItem("td_meta_accounts");
+              if (cached) {
+                const accs = JSON.parse(cached);
                 setMetaAccounts(accs);
                 setMetaStatus("connected");
                 setMetaStep(2);
-                localStorage.setItem("td_meta_accounts", JSON.stringify(accs));
                 await saveConnection("meta", conn.access_token, conn.bm_id, accs);
                 await fetchInsights(accs, conn.access_token, dashPeriod);
+                continue;
               }
-            } catch (e3) {
-              console.error("restore meta:", e3);
+              try {
+                const res = await fetch(`${GRAPH}/${conn.bm_id}/owned_ad_accounts?fields=id,name,account_status,currency,amount_spent&access_token=${conn.access_token}&limit=20`);
+                const d2 = await res.json();
+                if (!d2.error && d2.data) {
+                  const accs = d2.data.map((a2) => ({ id: a2.id.replace("act_", ""), name: a2.name, status: a2.account_status === 1 ? "active" : "inactive", currency: a2.currency || "BRL", spend: "R$ 0,00" }));
+                  setMetaAccounts(accs);
+                  setMetaStatus("connected");
+                  setMetaStep(2);
+                  localStorage.setItem("td_meta_accounts", JSON.stringify(accs));
+                  await saveConnection("meta", conn.access_token, conn.bm_id, accs);
+                  await fetchInsights(accs, conn.access_token, dashPeriod);
+                }
+              } catch (e3) {
+                console.error("restore meta:", e3);
+              }
             }
           }
         }
-      }
-      const { data: mcData } = await supabase.from("metrics_cache").select("*").eq("user_id", user.id);
-      if (mcData == null ? void 0 : mcData.length) {
-        const fresh = mcData.filter((m2) => /* @__PURE__ */ new Date() - new Date(m2.fetched_at) < 72e5);
-        if (fresh.length > 0) setLiveMetrics(fresh.map((m2) => m2.data));
+        const { data: mcData, error: mcErr } = await supabase.from("metrics_cache").select("*").eq("user_id", user.id);
+        if (mcErr) console.error("load metrics_cache:", mcErr);
+        else if (mcData == null ? void 0 : mcData.length) {
+          const fresh = mcData.filter((m2) => /* @__PURE__ */ new Date() - new Date(m2.fetched_at) < 72e5);
+          if (fresh.length > 0) setLiveMetrics(fresh.map((m2) => m2.data));
+        }
+      } catch (err) {
+        console.error("Data load error:", err);
+        setBudgetLoading(false);
       }
     })();
   }, [user == null ? void 0 : user.id]);
   reactExports.useEffect(() => {
     if (!(user == null ? void 0 : user.id) || !dashPeriod) return;
-    supabase.from("user_preferences").upsert({ user_id: user.id, dash_period: dashPeriod, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id" });
+    supabase.from("user_preferences").upsert({ user_id: user.id, dash_period: dashPeriod, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id" }).then(() => {
+    }).catch(() => {
+    });
   }, [dashPeriod, user == null ? void 0 : user.id]);
   reactExports.useEffect(() => {
     if (!liveMetrics || !budgetRules.length) return;

@@ -359,34 +359,48 @@ export default function Dashboard(){
   }
 
   async function saveConnection(platform,token,bmId,accounts){
-    if(!user?.id)return;
-    await supabase.from("connections").upsert({user_id:user.id,platform,access_token:token,bm_id:bmId,status:"connected",connected_at:new Date().toISOString(),updated_at:new Date().toISOString()},{onConflict:"user_id,platform"});
-    localStorage.setItem(`td_${platform}_accounts`,JSON.stringify(accounts));
+    if(!user?.id){console.warn("saveConnection: no user");return;}
+    try{
+      const{error:connErr}=await supabase.from("connections").upsert({
+        user_id:user.id,platform,access_token:token,bm_id:bmId,
+        status:"connected",connected_at:new Date().toISOString(),updated_at:new Date().toISOString()
+      },{onConflict:"user_id,platform"});
+      if(connErr)console.error("saveConnection (connections):",connErr);
 
-    // ★ Persistir contas como "clients" no Supabase
-    if(accounts?.length>0){
-      const clientRows=accounts.map(a=>({
-        user_id:user.id,
-        account_id:a.id,
-        platform,
-        name:a.name,
-        short:a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),
-        platforms:[platform],
-        currency:a.currency||"BRL",
-        status:a.status==="active"?"active":"paused",
-        last_synced_at:new Date().toISOString(),
-        is_archived:false,
-      }));
-      // Upsert por (user_id, account_id, platform) — não duplica se já existir
-      await supabase.from("clients").upsert(clientRows,{onConflict:"user_id,account_id,platform"});
+      localStorage.setItem(`td_${platform}_accounts`,JSON.stringify(accounts));
+
+      // ★ Persistir contas como "clients" no Supabase
+      if(accounts?.length>0){
+        const clientRows=accounts.map(a=>({
+          user_id:user.id,
+          account_id:a.id,
+          platform,
+          name:a.name,
+          short:a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),
+          platforms:[platform],
+          currency:a.currency||"BRL",
+          status:a.status==="active"?"active":"paused",
+          last_synced_at:new Date().toISOString(),
+          is_archived:false,
+        }));
+        const{error:cliErr}=await supabase.from("clients").upsert(clientRows,{onConflict:"user_id,account_id,platform"});
+        if(cliErr)console.error("saveConnection (clients):",cliErr);
+      }
+    }catch(e){
+      console.error("saveConnection error:",e);
     }
   }
 
   async function loadSavedClients(platform){
     if(!user?.id)return[];
-    const{data,error}=await supabase.from("clients").select("*").eq("user_id",user.id).eq("platform",platform).eq("is_archived",false).order("name");
-    if(error||!data)return[];
-    return data.map(c=>({id:c.account_id,name:c.name,status:c.status,currency:c.currency||"BRL",spend:"R$ 0,00"}));
+    try{
+      const{data,error}=await supabase.from("clients").select("*").eq("user_id",user.id).eq("platform",platform).eq("is_archived",false).order("name");
+      if(error){console.error("loadSavedClients:",error);return[];}
+      return(data||[]).map(c=>({id:c.account_id,name:c.name,status:c.status,currency:c.currency||"BRL",spend:"R$ 0,00"}));
+    }catch(e){
+      console.error("loadSavedClients error:",e);
+      return[];
+    }
   }
 
   async function clearConnection(platform){
@@ -429,29 +443,40 @@ export default function Dashboard(){
   useEffect(()=>{
     if(!user?.id)return;
     (async()=>{
-      // Tasks
-      const{data:tData}=await supabase.from("tasks").select("*").eq("user_id",user.id).order("created_at",{ascending:false});
-      if(tData)setTasks(tData.map(t=>({id:t.id,title:t.title,client:t.client||"",status:t.status,priority:t.priority,due:t.due||"–"})));
+      try{
+        // Tasks
+        const{data:tData,error:tErr}=await supabase.from("tasks").select("*").eq("user_id",user.id).order("created_at",{ascending:false});
+        if(tErr)console.error("load tasks:",tErr);
+        else if(tData)setTasks(tData.map(t=>({id:t.id,title:t.title,client:t.client||"",status:t.status,priority:t.priority,due:t.due||"–"})));
 
-      // WA Campaigns
-      const{data:waData}=await supabase.from("wa_campaigns").select("*").eq("user_id",user.id).order("created_at",{ascending:false});
-      if(waData)setWaCampaigns(waData.map(c=>({id:c.id,name:c.name,client:c.client||"",status:c.status,total:c.total||0,sent:c.sent||0,delivered:c.delivered||0,read:c.read_count||0,replied:c.replied||0,converted:c.converted||0,createdAt:new Date(c.created_at).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}),scheduledAt:c.scheduled_at||"",msg:c.msg||""})));
+        // WA Campaigns
+        const{data:waData,error:waErr}=await supabase.from("wa_campaigns").select("*").eq("user_id",user.id).order("created_at",{ascending:false});
+        if(waErr)console.error("load wa_campaigns:",waErr);
+        else if(waData)setWaCampaigns(waData.map(c=>({id:c.id,name:c.name,client:c.client||"",status:c.status,total:c.total||0,sent:c.sent||0,delivered:c.delivered||0,read:c.read_count||0,replied:c.replied||0,converted:c.converted||0,createdAt:new Date(c.created_at).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}),scheduledAt:c.scheduled_at||"",msg:c.msg||""})));
 
-      // Alerts
-      const{data:aData}=await supabase.from("alerts").select("*").eq("user_id",user.id).eq("resolved",false).order("created_at",{ascending:false}).limit(20);
-      if(aData)setAlerts(aData.map(a=>({id:a.id,sev:a.severity,client:a.client||"",msg:a.message||"",age:timeAgo(a.created_at),plat:a.platform||"meta",resolved:false,auto_generated:a.auto_generated})));
+        // Alerts
+        const{data:aData,error:aErr}=await supabase.from("alerts").select("*").eq("user_id",user.id).eq("resolved",false).order("created_at",{ascending:false}).limit(20);
+        if(aErr)console.error("load alerts:",aErr);
+        else if(aData)setAlerts(aData.map(a=>({id:a.id,sev:a.severity,client:a.client||"",msg:a.message||"",age:timeAgo(a.created_at),plat:a.platform||"meta",resolved:false,auto_generated:a.auto_generated})));
 
-      // Budget rules
-      const{data:brData}=await supabase.from("budget_rules").select("*").eq("user_id",user.id).order("created_at",{ascending:false});
-      if(brData)setBudgetRules(brData);setBudgetLoading(false);
+        // Budget rules
+        const{data:brData,error:brErr}=await supabase.from("budget_rules").select("*").eq("user_id",user.id).order("created_at",{ascending:false});
+        if(brErr)console.error("load budget_rules:",brErr);
+        else if(brData)setBudgetRules(brData);
+        setBudgetLoading(false);
 
-      // Client settings
-      const{data:csData}=await supabase.from("client_settings").select("*").eq("user_id",user.id);
-      if(csData){const map={};csData.forEach(s=>{map[`${s.platform}_${s.account_id}`]=s;});setClientSettings(map);}
+        // Client settings
+        const{data:csData,error:csErr}=await supabase.from("client_settings").select("*").eq("user_id",user.id);
+        if(csErr)console.error("load client_settings:",csErr);
+        else if(csData){const map={};csData.forEach(s=>{map[`${s.platform}_${s.account_id}`]=s;});setClientSettings(map);}
 
-      // User preferences
-      const{data:pData}=await supabase.from("user_preferences").select("*").eq("user_id",user.id).single().catch(()=>({data:null}));
-      if(pData?.dash_period)setDashPeriod(pData.dash_period);
+        // User preferences (maybeSingle handles no-row gracefully)
+        let pData=null;
+        try{
+          const{data}=await supabase.from("user_preferences").select("*").eq("user_id",user.id).maybeSingle();
+          pData=data;
+        }catch(e){console.error("load user_preferences:",e);}
+        if(pData?.dash_period)setDashPeriod(pData.dash_period);
 
       // Restore connection
       const{data:connData}=await supabase.from("connections").select("*").eq("user_id",user.id).eq("status","connected");
@@ -499,10 +524,15 @@ export default function Dashboard(){
       }
 
       // Metrics cache (show while loading)
-      const{data:mcData}=await supabase.from("metrics_cache").select("*").eq("user_id",user.id);
-      if(mcData?.length){
+      const{data:mcData,error:mcErr}=await supabase.from("metrics_cache").select("*").eq("user_id",user.id);
+      if(mcErr)console.error("load metrics_cache:",mcErr);
+      else if(mcData?.length){
         const fresh=mcData.filter(m=>new Date()-new Date(m.fetched_at)<7200000);
         if(fresh.length>0) setLiveMetrics(fresh.map(m=>m.data));
+      }
+      }catch(err){
+        console.error("Data load error:",err);
+        setBudgetLoading(false);
       }
     })();
   },[user?.id]);
@@ -510,7 +540,7 @@ export default function Dashboard(){
   // Save preferences when period changes
   useEffect(()=>{
     if(!user?.id||!dashPeriod)return;
-    supabase.from("user_preferences").upsert({user_id:user.id,dash_period:dashPeriod,updated_at:new Date().toISOString()},{onConflict:"user_id"});
+    supabase.from("user_preferences").upsert({user_id:user.id,dash_period:dashPeriod,updated_at:new Date().toISOString()},{onConflict:"user_id"}).then(()=>{}).catch(()=>{});
   },[dashPeriod,user?.id]);
 
   // Budget alerts check
