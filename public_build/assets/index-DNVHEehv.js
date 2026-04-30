@@ -51438,11 +51438,27 @@ function Dashboard() {
   const avgMROAS = (metaRows.reduce((s2, d2) => s2 + d2.roas, 0) / metaRows.length).toFixed(1);
   const avgGROAS = (googleRows.reduce((s2, d2) => s2 + d2.roas, 0) / googleRows.length).toFixed(1);
   const crit = alerts2.filter((a2) => a2.sev === "high").length;
+  function getRealSpend(accountId, platform) {
+    var _a2;
+    if (!liveMetrics) return null;
+    const m2 = liveMetrics.find((d2) => d2.accountId === accountId);
+    if (!m2) return null;
+    const currency = ((_a2 = metaAccounts.find((a2) => a2.id === accountId)) == null ? void 0 : _a2.currency) || "BRL";
+    const symbol = { BRL: "R$", USD: "$", EUR: "€" }[currency] || "R$";
+    return `${symbol} ${parseFloat(m2.investido || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+  }
   const dynClients = [
-    ...metaAccounts.map((a2, i) => ({ id: `meta-${i}`, name: a2.name, short: a2.name.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase(), platforms: ["meta"], budget: 0, status: a2.status || "active", accountId: a2.id, spend: a2.spend })),
-    ...googleAccounts.map((a2, i) => ({ id: `google-${i}`, name: a2.name, short: a2.name.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase(), platforms: ["google"], budget: 0, status: a2.status || "active", accountId: a2.id, spend: a2.spend }))
+    ...metaAccounts.map((a2, i) => {
+      var _a2;
+      const realSpend = getRealSpend(a2.id);
+      return { id: `meta-${i}`, name: a2.name, short: a2.name.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase(), platforms: ["meta"], budget: ((_a2 = clientSettings[`meta_${a2.id}`]) == null ? void 0 : _a2.budget) || 0, status: a2.status || "active", accountId: a2.id, spend: realSpend || a2.spend || "R$ 0,00" };
+    }),
+    ...googleAccounts.map((a2, i) => {
+      var _a2;
+      return { id: `google-${i}`, name: a2.name, short: a2.name.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase(), platforms: ["google"], budget: ((_a2 = clientSettings[`google_${a2.id}`]) == null ? void 0 : _a2.budget) || 0, status: a2.status || "active", accountId: a2.id, spend: a2.spend || "R$ 0,00" };
+    })
   ];
-  const activeClients = dynClients.length > 0 ? dynClients : [];
+  const activeClients = dynClients;
   const addTask = async () => {
     if (!nt.title || !nt.client) return;
     const row = { user_id: user == null ? void 0 : user.id, title: nt.title, client: nt.client, status: "todo", priority: nt.priority, due: "–" };
@@ -51765,10 +51781,9 @@ function Dashboard() {
           ] })
         ] }),
         view === "clients" && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill,minmax(288px,1fr))", gap: 12 }, children: activeClients.map((c2) => {
-          const cm = metaRows.find((d2) => d2.client === c2.name);
-          const cg2 = googleRows.find((d2) => d2.client === c2.name);
-          const tot = ((cm == null ? void 0 : cm.spend) || 0) + ((cg2 == null ? void 0 : cg2.spend) || 0);
-          const pct = Math.min(Math.round(tot / c2.budget * 100), 100);
+          const liveData = liveMetrics == null ? void 0 : liveMetrics.find((d2) => d2.accountId === c2.accountId);
+          const tot = liveData ? parseFloat(liveData.investido) || 0 : 0;
+          const pct = c2.budget > 0 ? Math.min(Math.round(tot / c2.budget * 100), 100) : 0;
           const bc2 = pct > 90 ? T.err : pct > 70 ? T.warn : T.ok;
           return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "20px 22px" }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }, children: [
@@ -51784,8 +51799,10 @@ function Dashboard() {
             /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }, children: [
               { l: "Gasto", v: fR(tot) },
               { l: "Orçamento", v: fR(c2.budget) },
-              ...cm ? [{ l: "ROAS Meta", v: cm.roas + "x" }, { l: "CTR Meta", v: cm.ctr + "%" }] : [],
-              ...cg2 ? [{ l: "ROAS Google", v: cg2.roas + "x" }, { l: "CTR Google", v: cg2.ctr + "%" }] : []
+              ...liveData ? [
+                { l: "Resultados", v: liveData.conversoes || 0 },
+                { l: "CTR", v: liveData.ctr + "%" }
+              ] : []
             ].map((m2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(255,255,255,.03)", borderRadius: 8, border: `1px solid ${T.border}`, padding: "10px 12px" }, children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, marginBottom: 4, fontWeight: 500, letterSpacing: ".07em", textTransform: "uppercase" }, children: m2.l }),
               /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontFamily: T.mono, fontSize: 14, color: T.txt }, children: m2.v })
@@ -51793,12 +51810,9 @@ function Dashboard() {
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 5 }, children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10, color: T.mute }, children: "Uso do orçamento" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 10, fontFamily: T.mono, color: bc2 }, children: [
-                  pct,
-                  "%"
-                ] })
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10, fontFamily: T.mono, color: c2.budget > 0 ? bc2 : T.mute }, children: c2.budget > 0 ? `${pct}%` : "Defina o orçamento" })
               ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: "rgba(255,255,255,.07)", borderRadius: 100, height: 4, overflow: "hidden" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: bc2, width: `${pct}%`, height: "100%", borderRadius: 100 } }) })
+              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: "rgba(255,255,255,.07)", borderRadius: 100, height: 4, overflow: "hidden" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: c2.budget > 0 ? bc2 : T.mute, width: c2.budget > 0 ? `${pct}%` : "0%", height: "100%", borderRadius: 100 } }) })
             ] })
           ] }, c2.id);
         }) }),

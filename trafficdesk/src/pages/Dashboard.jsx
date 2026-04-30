@@ -674,12 +674,23 @@ export default function Dashboard(){
   const avgMROAS=(metaRows.reduce((s,d)=>s+d.roas,0)/metaRows.length).toFixed(1);
   const avgGROAS=(googleRows.reduce((s,d)=>s+d.roas,0)/googleRows.length).toFixed(1);
   const crit=alerts.filter(a=>a.sev==="high").length;
-  // Dynamic clients from connected accounts
+  // Dynamic clients from connected accounts — cruza com liveMetrics para spend real
+  function getRealSpend(accountId,platform){
+    if(!liveMetrics)return null;
+    const m=liveMetrics.find(d=>d.accountId===accountId);
+    if(!m)return null;
+    const currency=platform==="meta"?(metaAccounts.find(a=>a.id===accountId)?.currency||"BRL"):"BRL";
+    const symbol={BRL:"R$",USD:"$",EUR:"€"}[currency]||"R$";
+    return`${symbol} ${parseFloat(m.investido||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}`;
+  }
   const dynClients=[
-    ...metaAccounts.map((a,i)=>({id:`meta-${i}`,name:a.name,short:a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),platforms:["meta"],budget:0,status:a.status||"active",accountId:a.id,spend:a.spend})),
-    ...googleAccounts.map((a,i)=>({id:`google-${i}`,name:a.name,short:a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),platforms:["google"],budget:0,status:a.status||"active",accountId:a.id,spend:a.spend})),
+    ...metaAccounts.map((a,i)=>{
+      const realSpend=getRealSpend(a.id,"meta");
+      return{id:`meta-${i}`,name:a.name,short:a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),platforms:["meta"],budget:clientSettings[`meta_${a.id}`]?.budget||0,status:a.status||"active",accountId:a.id,spend:realSpend||a.spend||"R$ 0,00"};
+    }),
+    ...googleAccounts.map((a,i)=>({id:`google-${i}`,name:a.name,short:a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase(),platforms:["google"],budget:clientSettings[`google_${a.id}`]?.budget||0,status:a.status||"active",accountId:a.id,spend:a.spend||"R$ 0,00"})),
   ];
-  const activeClients=dynClients.length>0?dynClients:[];
+  const activeClients=dynClients;
 
   const addTask=async()=>{
     if(!nt.title||!nt.client)return;
@@ -1010,10 +1021,10 @@ export default function Dashboard(){
           {view==="clients"&&(
             <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(288px,1fr))",gap:12}}>
               {activeClients.map(c=>{
-                const cm=metaRows.find(d=>d.client===c.name);
-                const cg=googleRows.find(d=>d.client===c.name);
-                const tot=(cm?.spend||0)+(cg?.spend||0);
-                const pct=Math.min(Math.round((tot/c.budget)*100),100);
+                // Usa liveMetrics (dados reais) em vez de metaRows (mockados)
+                const liveData=liveMetrics?.find(d=>d.accountId===c.accountId);
+                const tot=liveData?parseFloat(liveData.investido)||0:0;
+                const pct=c.budget>0?Math.min(Math.round((tot/c.budget)*100),100):0;
                 const bc=pct>90?T.err:pct>70?T.warn:T.ok;
                 return(
                   <div key={c.id} className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"20px 22px"}}>
@@ -1030,8 +1041,10 @@ export default function Dashboard(){
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
                       {[
                         {l:"Gasto",v:fR(tot)},{l:"Orçamento",v:fR(c.budget)},
-                        ...(cm?[{l:"ROAS Meta",v:cm.roas+"x"},{l:"CTR Meta",v:cm.ctr+"%"}]:[]),
-                        ...(cg?[{l:"ROAS Google",v:cg.roas+"x"},{l:"CTR Google",v:cg.ctr+"%"}]:[]),
+                        ...(liveData?[
+                          {l:"Resultados",v:liveData.conversoes||0},
+                          {l:"CTR",v:liveData.ctr+"%"},
+                        ]:[]),
                       ].map((m,i)=>(
                         <div key={i} style={{background:"rgba(255,255,255,.03)",borderRadius:8,border:`1px solid ${T.border}`,padding:"10px 12px"}}>
                           <div style={{fontSize:9,color:T.mute,marginBottom:4,fontWeight:500,letterSpacing:".07em",textTransform:"uppercase"}}>{m.l}</div>
@@ -1042,10 +1055,10 @@ export default function Dashboard(){
                     <div>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                         <span style={{fontSize:10,color:T.mute}}>Uso do orçamento</span>
-                        <span style={{fontSize:10,fontFamily:T.mono,color:bc}}>{pct}%</span>
+                        <span style={{fontSize:10,fontFamily:T.mono,color:c.budget>0?bc:T.mute}}>{c.budget>0?`${pct}%`:"Defina o orçamento"}</span>
                       </div>
                       <div style={{background:"rgba(255,255,255,.07)",borderRadius:100,height:4,overflow:"hidden"}}>
-                        <div style={{background:bc,width:`${pct}%`,height:"100%",borderRadius:100}}></div>
+                        <div style={{background:c.budget>0?bc:T.mute,width:c.budget>0?`${pct}%`:"0%",height:"100%",borderRadius:100}}></div>
                       </div>
                     </div>
                   </div>
