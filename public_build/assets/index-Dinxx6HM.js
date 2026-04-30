@@ -28851,11 +28851,11 @@ function AuthPage() {
   const { signIn, signUp, signInWithGoogle, resetPassword } = useAuth();
   const [mode, setMode] = reactExports.useState("login");
   const [loading, setLoading] = reactExports.useState(false);
-  const [alert, setAlert] = reactExports.useState(null);
+  const [alert2, setAlert] = reactExports.useState(null);
   const [name, setName] = reactExports.useState("");
   const [email, setEmail] = reactExports.useState("");
   const [password, setPassword] = reactExports.useState("");
-  const [confirm, setConfirm] = reactExports.useState("");
+  const [confirm2, setConfirm] = reactExports.useState("");
   const [errors, setErrors] = reactExports.useState({});
   const from = ((_b = (_a = location2.state) == null ? void 0 : _a.from) == null ? void 0 : _b.pathname) || "/dashboard";
   const clearAll = () => {
@@ -28874,7 +28874,7 @@ function AuthPage() {
       if (!password) e3.password = "Senha é obrigatória";
       else if (password.length < 8) e3.password = "Mínimo de 8 caracteres";
     }
-    if (mode === "signup" && password !== confirm) e3.confirm = "As senhas não coincidem";
+    if (mode === "signup" && password !== confirm2) e3.confirm = "As senhas não coincidem";
     setErrors(e3);
     return Object.keys(e3).length === 0;
   };
@@ -28964,7 +28964,7 @@ function AuthPage() {
             mode === "signup" && "Comece a gerenciar seus clientes",
             mode === "reset" && "Enviaremos um link para seu e-mail"
           ] }),
-          alert && /* @__PURE__ */ jsxRuntimeExports.jsx(Alert, { msg: alert.msg, type: alert.type }),
+          alert2 && /* @__PURE__ */ jsxRuntimeExports.jsx(Alert, { msg: alert2.msg, type: alert2.type }),
           mode !== "reset" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(GoogleBtn, { onClick: handleGoogle, loading }),
             /* @__PURE__ */ jsxRuntimeExports.jsx(Divider, {})
@@ -29023,7 +29023,7 @@ function AuthPage() {
               {
                 label: "Confirmar senha",
                 type: "password",
-                value: confirm,
+                value: confirm2,
                 onChange: setConfirm,
                 placeholder: "Repita a senha",
                 error: errors.confirm,
@@ -50821,7 +50821,6 @@ const clients = [
   { id: 4, name: "Marca Delta", short: "MD", platforms: ["meta", "google"], budget: 2e4, status: "active" },
   { id: 5, name: "Clínica Epsilon", short: "CE", platforms: ["meta"], budget: 3500, status: "active" }
 ];
-const metaRows = [];
 const googleRows = [];
 const spendTrend = [
   { w: "S1", meta: 0, google: 0 },
@@ -51190,18 +51189,47 @@ function Dashboard() {
     await supabase.from("clients").update({ is_archived: true }).eq("user_id", user.id).eq("platform", platform);
   }
   async function saveBudgetRule() {
-    if (!newBudget.name || !newBudget.limit || !(user == null ? void 0 : user.id)) return;
-    const row = { user_id: user.id, name: newBudget.name, account_id: newBudget.accountId || null, currency: newBudget.currency, limit_value: parseFloat(newBudget.limit), alert_pct: parseInt(newBudget.alertPct), period: newBudget.period };
-    const { data, error } = await supabase.from("budget_rules").insert(row).select().single();
-    if (!error && data) {
-      setBudgetRules((prev) => [data, ...prev]);
-      setNewBudget({ name: "", accountId: "", currency: "BRL", limit: "", alertPct: 80, period: "monthly" });
-      setShowBudgetForm(false);
+    if (!newBudget.name || !newBudget.limit) {
+      alert("Preencha o nome e o valor do limite.");
+      return;
+    }
+    if (!(user == null ? void 0 : user.id)) {
+      alert("Erro: usuário não identificado. Faça login novamente.");
+      return;
+    }
+    const row = {
+      user_id: user.id,
+      name: newBudget.name,
+      account_id: newBudget.accountId || null,
+      currency: newBudget.currency,
+      limit_value: parseFloat(newBudget.limit),
+      alert_pct: parseInt(newBudget.alertPct),
+      period: newBudget.period
+    };
+    try {
+      const { data, error } = await supabase.from("budget_rules").insert(row).select().single();
+      if (error) {
+        console.error("saveBudgetRule:", error);
+        alert("Erro ao salvar a regra: " + (error.message || "verifique sua conexão"));
+        return;
+      }
+      if (data) {
+        setBudgetRules((prev) => [data, ...prev]);
+        setNewBudget({ name: "", accountId: "", currency: "BRL", limit: "", alertPct: 80, period: "monthly" });
+        setShowBudgetForm(false);
+      }
+    } catch (e3) {
+      console.error("saveBudgetRule error:", e3);
+      alert("Erro inesperado ao salvar a regra.");
     }
   }
   async function deleteBudgetRule(id2) {
+    if (!confirm("Tem certeza que deseja remover esta regra?")) return;
     setBudgetRules((prev) => prev.filter((r2) => r2.id !== id2));
-    if (user == null ? void 0 : user.id) await supabase.from("budget_rules").delete().eq("id", id2).eq("user_id", user.id);
+    if (user == null ? void 0 : user.id) {
+      const { error } = await supabase.from("budget_rules").delete().eq("id", id2).eq("user_id", user.id);
+      if (error) console.error("deleteBudgetRule:", error);
+    }
   }
   async function updateBudgetRule(id2, field, value) {
     setBudgetRules((prev) => prev.map((r2) => r2.id === id2 ? { ...r2, [field]: value } : r2));
@@ -51303,11 +51331,19 @@ function Dashboard() {
     });
   }, [dashPeriod, user == null ? void 0 : user.id]);
   reactExports.useEffect(() => {
-    if (!liveMetrics || !budgetRules.length) return;
+    if (!liveMetrics || !budgetRules.length) {
+      setBudgetAlerts([]);
+      return;
+    }
     const triggered = budgetRules.filter((rule) => {
-      const m2 = liveMetrics.find((d2) => d2.accountId === rule.account_id);
-      const spent = m2 ? parseFloat(m2.investido) : 0;
-      const pct = rule.limit_value > 0 ? Math.round(spent / rule.limit_value * 100) : 0;
+      let spent;
+      if (rule.account_id) {
+        const m2 = liveMetrics.find((d2) => d2.accountId === rule.account_id);
+        spent = m2 ? parseFloat(m2.investido) : 0;
+      } else {
+        spent = liveMetrics.reduce((s2, m2) => s2 + parseFloat(m2.investido || 0), 0);
+      }
+      const pct = rule.limit_value > 0 ? spent / rule.limit_value * 100 : 0;
       return pct >= rule.alert_pct;
     });
     setBudgetAlerts(triggered);
@@ -51432,11 +51468,12 @@ function Dashboard() {
     setGoogleForm(initGoogle);
     setGoogleStep(0);
   };
-  const totMeta = metaRows.reduce((s2, d2) => s2 + d2.spend, 0);
+  const totMeta = liveMetrics ? liveMetrics.reduce((s2, d2) => s2 + parseFloat(d2.investido || 0), 0) : 0;
   const totGoogle = googleRows.reduce((s2, d2) => s2 + d2.spend, 0);
   const total = totMeta + totGoogle;
-  const avgMROAS = (metaRows.reduce((s2, d2) => s2 + d2.roas, 0) / metaRows.length).toFixed(1);
-  const avgGROAS = (googleRows.reduce((s2, d2) => s2 + d2.roas, 0) / googleRows.length).toFixed(1);
+  const totalConvValue = liveMetrics ? liveMetrics.reduce((s2, d2) => s2 + parseFloat(d2.valorResult || 0), 0) : 0;
+  const avgMROAS = totMeta > 0 ? (totalConvValue / totMeta).toFixed(1) : "0.0";
+  const avgGROAS = googleRows.length > 0 ? (googleRows.reduce((s2, d2) => s2 + d2.roas, 0) / googleRows.length).toFixed(1) : "0.0";
   const crit = alerts2.filter((a2) => a2.sev === "high").length;
   function getRealSpend(accountId, platform) {
     var _a2;
@@ -51447,6 +51484,21 @@ function Dashboard() {
     const symbol = { BRL: "R$", USD: "$", EUR: "€" }[currency] || "R$";
     return `${symbol} ${parseFloat(m2.investido || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
   }
+  const liveMetaRows = liveMetrics ? liveMetrics.map((d2) => {
+    const spend = parseFloat(d2.investido || 0);
+    const value = parseFloat(d2.valorResult || 0);
+    return {
+      client: d2.client,
+      accountId: d2.accountId,
+      spend,
+      ctr: parseFloat(d2.ctr || 0),
+      cpc: parseFloat(d2.cpc || 0),
+      conv: parseInt(d2.conversoes || 0),
+      roas: spend > 0 ? +(value / spend).toFixed(2) : 0,
+      impressoes: d2.impressoes || 0,
+      alcance: d2.alcance || 0
+    };
+  }) : [];
   const dynClients = [
     ...metaAccounts.map((a2, i) => {
       var _a2;
@@ -51709,7 +51761,7 @@ function Dashboard() {
             /* @__PURE__ */ jsxRuntimeExports.jsx(MCard, { label: "Alertas", value: alerts2.length, sub: `${crit} crítico${crit !== 1 ? "s" : ""}`, accent: T.err, up: false, m: isMobile })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 360px", gap: 12, marginBottom: 12 }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexDirection: "column", gap: 12 }, children: [{ label: "Meta Ads", color: T.meta, rows: metaRows, tot: totMeta, lowCTR: 1.2 }, { label: "Google Ads", color: T.google, rows: googleRows, tot: totGoogle, lowCTR: 2 }].map((pl2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "18px 22px" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexDirection: "column", gap: 12 }, children: [{ label: "Meta Ads", color: T.meta, rows: liveMetaRows, tot: totMeta, lowCTR: 1.2 }, { label: "Google Ads", color: T.google, rows: googleRows, tot: totGoogle, lowCTR: 2 }].map((pl2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.border}`, padding: "18px 22px" }, children: [
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }, children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { width: 8, height: 8, borderRadius: "50%", background: pl2.color, display: "inline-block" } }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13, fontWeight: 600, color: T.txt }, children: pl2.label }),

@@ -423,15 +423,48 @@ export default function Dashboard(){
   }
 
   async function saveBudgetRule(){
-    if(!newBudget.name||!newBudget.limit||!user?.id)return;
-    const row={user_id:user.id,name:newBudget.name,account_id:newBudget.accountId||null,currency:newBudget.currency,limit_value:parseFloat(newBudget.limit),alert_pct:parseInt(newBudget.alertPct),period:newBudget.period};
-    const{data,error}=await supabase.from("budget_rules").insert(row).select().single();
-    if(!error&&data){setBudgetRules(prev=>[data,...prev]);setNewBudget({name:"",accountId:"",currency:"BRL",limit:"",alertPct:80,period:"monthly"});setShowBudgetForm(false);}
+    if(!newBudget.name||!newBudget.limit){
+      alert("Preencha o nome e o valor do limite.");
+      return;
+    }
+    if(!user?.id){
+      alert("Erro: usuário não identificado. Faça login novamente.");
+      return;
+    }
+    const row={
+      user_id:user.id,
+      name:newBudget.name,
+      account_id:newBudget.accountId||null,
+      currency:newBudget.currency,
+      limit_value:parseFloat(newBudget.limit),
+      alert_pct:parseInt(newBudget.alertPct),
+      period:newBudget.period,
+    };
+    try{
+      const{data,error}=await supabase.from("budget_rules").insert(row).select().single();
+      if(error){
+        console.error("saveBudgetRule:",error);
+        alert("Erro ao salvar a regra: "+(error.message||"verifique sua conexão"));
+        return;
+      }
+      if(data){
+        setBudgetRules(prev=>[data,...prev]);
+        setNewBudget({name:"",accountId:"",currency:"BRL",limit:"",alertPct:80,period:"monthly"});
+        setShowBudgetForm(false);
+      }
+    }catch(e){
+      console.error("saveBudgetRule error:",e);
+      alert("Erro inesperado ao salvar a regra.");
+    }
   }
 
   async function deleteBudgetRule(id){
+    if(!confirm("Tem certeza que deseja remover esta regra?"))return;
     setBudgetRules(prev=>prev.filter(r=>r.id!==id));
-    if(user?.id) await supabase.from("budget_rules").delete().eq("id",id).eq("user_id",user.id);
+    if(user?.id){
+      const{error}=await supabase.from("budget_rules").delete().eq("id",id).eq("user_id",user.id);
+      if(error)console.error("deleteBudgetRule:",error);
+    }
   }
 
   async function updateBudgetRule(id,field,value){
@@ -545,11 +578,18 @@ export default function Dashboard(){
 
   // Budget alerts check
   useEffect(()=>{
-    if(!liveMetrics||!budgetRules.length)return;
+    if(!liveMetrics||!budgetRules.length){setBudgetAlerts([]);return;}
     const triggered=budgetRules.filter(rule=>{
-      const m=liveMetrics.find(d=>d.accountId===rule.account_id);
-      const spent=m?parseFloat(m.investido):0;
-      const pct=rule.limit_value>0?Math.round((spent/rule.limit_value)*100):0;
+      let spent;
+      if(rule.account_id){
+        // Regra para conta específica
+        const m=liveMetrics.find(d=>d.accountId===rule.account_id);
+        spent=m?parseFloat(m.investido):0;
+      }else{
+        // Regra para todas as contas — soma tudo
+        spent=liveMetrics.reduce((s,m)=>s+parseFloat(m.investido||0),0);
+      }
+      const pct=rule.limit_value>0?(spent/rule.limit_value)*100:0;
       return pct>=rule.alert_pct;
     });
     setBudgetAlerts(triggered);
@@ -668,11 +708,16 @@ export default function Dashboard(){
   };
   const disconnectGoogle=()=>{setGoogleStatus("idle");setGoogleAccounts([]);setGoogleForm(initGoogle);setGoogleStep(0);};
 
-  const totMeta=metaRows.reduce((s,d)=>s+d.spend,0);
-  const totGoogle=googleRows.reduce((s,d)=>s+d.spend,0);
+  // ═══════════════════════════════════════════════════════════
+  // KPIs do Dashboard — calculados a partir de liveMetrics (dados reais)
+  // ═══════════════════════════════════════════════════════════
+  const totMeta=liveMetrics?liveMetrics.reduce((s,d)=>s+parseFloat(d.investido||0),0):0;
+  const totGoogle=googleRows.reduce((s,d)=>s+d.spend,0); // Google ainda mockup
   const total=totMeta+totGoogle;
-  const avgMROAS=(metaRows.reduce((s,d)=>s+d.roas,0)/metaRows.length).toFixed(1);
-  const avgGROAS=(googleRows.reduce((s,d)=>s+d.roas,0)/googleRows.length).toFixed(1);
+  const totalConvValue=liveMetrics?liveMetrics.reduce((s,d)=>s+parseFloat(d.valorResult||0),0):0;
+  // ROAS médio: valor de conversão / investimento (não média de roas individuais)
+  const avgMROAS=totMeta>0?(totalConvValue/totMeta).toFixed(1):"0.0";
+  const avgGROAS=googleRows.length>0?(googleRows.reduce((s,d)=>s+d.roas,0)/googleRows.length).toFixed(1):"0.0";
   const crit=alerts.filter(a=>a.sev==="high").length;
   // Dynamic clients from connected accounts — cruza com liveMetrics para spend real
   function getRealSpend(accountId,platform){
@@ -683,6 +728,22 @@ export default function Dashboard(){
     const symbol={BRL:"R$",USD:"$",EUR:"€"}[currency]||"R$";
     return`${symbol} ${parseFloat(m.investido||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}`;
   }
+  // Build metaRows from liveMetrics for tables/exports
+  const liveMetaRows=liveMetrics?liveMetrics.map(d=>{
+    const spend=parseFloat(d.investido||0);
+    const value=parseFloat(d.valorResult||0);
+    return{
+      client:d.client,
+      accountId:d.accountId,
+      spend,
+      ctr:parseFloat(d.ctr||0),
+      cpc:parseFloat(d.cpc||0),
+      conv:parseInt(d.conversoes||0),
+      roas:spend>0?+(value/spend).toFixed(2):0,
+      impressoes:d.impressoes||0,
+      alcance:d.alcance||0,
+    };
+  }):[];
   const dynClients=[
     ...metaAccounts.map((a,i)=>{
       const realSpend=getRealSpend(a.id,"meta");
@@ -702,7 +763,7 @@ export default function Dashboard(){
   const move=async(id,status)=>{setTasks(ts=>ts.map(t=>t.id===id?{...t,status}:t));if(user?.id)await supabase.from("tasks").update({status}).eq("id",id).eq("user_id",user.id);};
   const exportCSV=()=>{
     const rows=[["Plataforma","Cliente","Gasto","CTR","CPC","Conv","ROAS"],
-      ...metaRows.map(d=>["Meta",d.client,d.spend,d.ctr,d.cpc,d.conv,d.roas]),
+      ...liveMetaRows.map(d=>["Meta",d.client,d.spend,d.ctr,d.cpc,d.conv,d.roas]),
       ...googleRows.map(d=>["Google",d.client,d.spend,d.ctr,d.cpc,d.conv,d.roas])];
     const a=document.createElement("a");
     a.href=URL.createObjectURL(new Blob(["\uFEFF"+rows.map(r=>r.join(",")).join("\n")],{type:"text/csv;charset=utf-8;"}));
@@ -938,7 +999,7 @@ export default function Dashboard(){
 
               <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 360px",gap:12,marginBottom:12}}>
                 <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                  {[{label:"Meta Ads",color:T.meta,rows:metaRows,tot:totMeta,lowCTR:1.2},{label:"Google Ads",color:T.google,rows:googleRows,tot:totGoogle,lowCTR:2}].map(pl=>(
+                  {[{label:"Meta Ads",color:T.meta,rows:liveMetaRows,tot:totMeta,lowCTR:1.2},{label:"Google Ads",color:T.google,rows:googleRows,tot:totGoogle,lowCTR:2}].map(pl=>(
                     <div key={pl.label} className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.border}`,padding:"18px 22px"}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
                         <span style={{width:8,height:8,borderRadius:"50%",background:pl.color,display:"inline-block"}}></span>
