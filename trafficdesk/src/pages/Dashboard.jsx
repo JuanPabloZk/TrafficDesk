@@ -1733,42 +1733,204 @@ export default function Dashboard(){
                 </div>
 
                 {/* ── FORM DE NOVA REGRA ── */}
-                {showBudgetForm&&(
-                  <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.borderMid}`,padding:"20px 22px",marginBottom:16}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.txt,marginBottom:14}}>Nova Regra de Verba</div>
-                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
-                      <div><div style={{fontSize:9,color:T.mute,letterSpacing:".07em",textTransform:"uppercase",marginBottom:4}}>Nome da Regra</div><input value={newBudget.name} onChange={e=>setNewBudget({...newBudget,name:e.target.value})} placeholder="Ex: Limite mensal — Conta Alpha" style={{width:"100%",background:"rgba(255,255,255,.04)",border:`1px solid ${T.borderMid}`,borderRadius:8,padding:"9px 12px",color:T.txt,fontSize:12,fontFamily:T.font,boxSizing:"border-box"}}/></div>
-                      <div><div style={{fontSize:9,color:T.mute,letterSpacing:".07em",textTransform:"uppercase",marginBottom:4}}>Conta (opcional)</div>
-                        <select value={newBudget.accountId} onChange={e=>setNewBudget({...newBudget,accountId:e.target.value})} style={{width:"100%",background:"rgba(255,255,255,.04)",border:`1px solid ${T.borderMid}`,borderRadius:8,padding:"9px 12px",color:T.txt,fontSize:12,fontFamily:T.font}}>
-                          <option value="">Todas as contas</option>
-                          {metaAccounts.map(a=>(<option key={a.id} value={a.id}>{a.name}</option>))}
-                        </select>
+                {showBudgetForm&&(()=>{
+                  const symb=(c)=>c==="EUR"?"€":c==="USD"?"$":"R$";
+                  const fmtPrev=(v,c)=>v?`${symb(c)} ${parseFloat(v).toLocaleString("pt-BR",{minimumFractionDigits:2})}`:`${symb(c)} 0,00`;
+                  const periodLabels={monthly:"Mensal",weekly:"Semanal",daily:"Diário"};
+                  const periodHints={monthly:"do mês corrente",weekly:"da semana corrente",daily:"do dia"};
+                  // Sugestão: gasto da conta selecionada nos últimos 30d
+                  const suggestion=(()=>{
+                    if(!liveMetrics)return null;
+                    if(newBudget.accountId){
+                      const m=liveMetrics.find(d=>d.accountId===newBudget.accountId);
+                      if(m){const v=parseFloat(m.investido);return v>0?{val:Math.ceil(v*1.2),label:"Sugestão: 20% acima do gasto atual"}:null;}
+                    }else{
+                      const total=liveMetrics.reduce((s,m)=>s+parseFloat(m.investido||0),0);
+                      if(total>0)return{val:Math.ceil(total*1.2),label:"Sugestão: 20% acima do gasto total"};
+                    }
+                    return null;
+                  })();
+                  const previewName=newBudget.name||"Nome da regra";
+                  const previewAcc=newBudget.accountId?(metaAccounts.find(a=>a.id===newBudget.accountId)?.name||"Conta"):"Todas as contas";
+                  const valid=newBudget.name&&newBudget.limit&&parseFloat(newBudget.limit)>0;
+
+                  return(
+                    <div className="card" style={{background:T.card,borderRadius:14,border:`1px solid ${T.borderMid}`,padding:0,marginBottom:16,overflow:"hidden"}}>
+                      {/* Header */}
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:`1px solid ${T.border}`}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <div style={{width:32,height:32,borderRadius:8,background:"rgba(99,102,241,.12)",border:"1px solid rgba(99,102,241,.18)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>💰</div>
+                          <div>
+                            <div style={{fontSize:13,fontWeight:600,color:T.txt}}>Nova Regra de Verba</div>
+                            <div style={{fontSize:11,color:T.mute,marginTop:2}}>Configure limites e alertas para suas contas</div>
+                          </div>
+                        </div>
+                        <button onClick={()=>setShowBudgetForm(false)} style={{width:30,height:30,borderRadius:7,border:`1px solid ${T.border}`,background:"transparent",color:T.sub,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
                       </div>
-                      <div><div style={{fontSize:9,color:T.mute,letterSpacing:".07em",textTransform:"uppercase",marginBottom:4}}>Valor limite</div>
-                        <div style={{display:"flex",gap:6}}>
-                          <select value={newBudget.currency} onChange={e=>setNewBudget({...newBudget,currency:e.target.value})} style={{background:"rgba(255,255,255,.04)",border:`1px solid ${T.borderMid}`,borderRadius:8,padding:"9px 10px",color:T.txt,fontSize:12,fontFamily:T.font}}>
-                            <option value="BRL">R$</option><option value="EUR">€</option><option value="USD">$</option>
-                          </select>
-                          <input type="number" value={newBudget.limit} onChange={e=>setNewBudget({...newBudget,limit:e.target.value})} placeholder="Ex: 300" style={{flex:1,background:"rgba(255,255,255,.04)",border:`1px solid ${T.borderMid}`,borderRadius:8,padding:"9px 12px",color:T.txt,fontSize:12,fontFamily:T.font,boxSizing:"border-box"}}/>
+
+                      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1.4fr 1fr"}}>
+                        {/* ─── COLUNA ESQUERDA: FORM ─── */}
+                        <div style={{padding:"20px 22px",borderRight:isMobile?"none":`1px solid ${T.border}`}}>
+
+                          {/* Templates rápidos */}
+                          <div style={{marginBottom:18}}>
+                            <div style={{fontSize:9,color:T.mute,letterSpacing:".08em",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>Comece rápido</div>
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+                              {[
+                                {l:"Limite mensal",p:"monthly",a:80,emoji:"📅"},
+                                {l:"Limite semanal",p:"weekly",a:75,emoji:"📊"},
+                                {l:"Verba diária",p:"daily",a:70,emoji:"⚡"},
+                              ].map((t,i)=>(
+                                <button key={i} onClick={()=>setNewBudget({...newBudget,period:t.p,alertPct:t.a,name:newBudget.name||t.l})} style={{padding:"10px 8px",borderRadius:9,border:`1px solid ${newBudget.period===t.p?T.accent+"66":T.border}`,background:newBudget.period===t.p?"rgba(99,102,241,.08)":"transparent",color:newBudget.period===t.p?T.accent:T.sub,cursor:"pointer",fontSize:11,fontFamily:T.font,display:"flex",flexDirection:"column",alignItems:"center",gap:4,transition:"all .15s"}}>
+                                  <span style={{fontSize:14}}>{t.emoji}</span>
+                                  <span style={{fontWeight:newBudget.period===t.p?600:500}}>{t.l}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Nome */}
+                          <div style={{marginBottom:14}}>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                              <label style={{fontSize:11,color:T.txt,fontWeight:500}}>Nome da regra</label>
+                              <span style={{fontSize:10,color:T.mute}}>{newBudget.name.length}/40</span>
+                            </div>
+                            <input value={newBudget.name} maxLength={40} onChange={e=>setNewBudget({...newBudget,name:e.target.value})} placeholder="Ex: Limite mensal — Cliente A" style={{width:"100%",background:"rgba(255,255,255,.04)",border:`1px solid ${newBudget.name?T.accent+"44":T.borderMid}`,borderRadius:9,padding:"10px 12px",color:T.txt,fontSize:13,fontFamily:T.font,boxSizing:"border-box",outline:"none",transition:"border-color .15s"}}/>
+                          </div>
+
+                          {/* Conta — visual */}
+                          <div style={{marginBottom:14}}>
+                            <label style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:6,display:"block"}}>Aplicar para</label>
+                            <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:140,overflowY:"auto",background:"rgba(255,255,255,.02)",borderRadius:9,padding:5,border:`1px solid ${T.borderMid}`}}>
+                              <button onClick={()=>setNewBudget({...newBudget,accountId:""})} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:7,border:"none",background:newBudget.accountId===""?"rgba(99,102,241,.1)":"transparent",cursor:"pointer",textAlign:"left",fontFamily:T.font,transition:"background .15s"}}>
+                                <div style={{width:22,height:22,borderRadius:6,background:newBudget.accountId===""?"rgba(99,102,241,.2)":"rgba(255,255,255,.05)",border:`1px solid ${newBudget.accountId===""?T.accent+"55":T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:newBudget.accountId===""?T.accent:T.sub,fontWeight:600}}>∗</div>
+                                <div style={{flex:1}}>
+                                  <div style={{fontSize:12,fontWeight:500,color:newBudget.accountId===""?T.txt:T.sub}}>Todas as contas</div>
+                                  <div style={{fontSize:10,color:T.mute,marginTop:1}}>Soma o gasto de todas as contas conectadas</div>
+                                </div>
+                                {newBudget.accountId===""&&<span style={{fontSize:13,color:T.accent}}>✓</span>}
+                              </button>
+                              {metaAccounts.map(a=>(
+                                <button key={a.id} onClick={()=>setNewBudget({...newBudget,accountId:a.id})} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:7,border:"none",background:newBudget.accountId===a.id?"rgba(99,102,241,.1)":"transparent",cursor:"pointer",textAlign:"left",fontFamily:T.font,transition:"background .15s"}}>
+                                  <div style={{width:22,height:22,borderRadius:6,background:newBudget.accountId===a.id?"rgba(99,102,241,.2)":"rgba(255,255,255,.05)",border:`1px solid ${newBudget.accountId===a.id?T.accent+"55":T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:newBudget.accountId===a.id?T.accent:T.sub,fontWeight:600}}>{a.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontSize:12,fontWeight:500,color:newBudget.accountId===a.id?T.txt:T.sub,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div>
+                                    <div style={{fontSize:10,color:T.mute,marginTop:1,fontFamily:T.mono}}>{a.id}</div>
+                                  </div>
+                                  {newBudget.accountId===a.id&&<span style={{fontSize:13,color:T.accent}}>✓</span>}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Período + Moeda em linha */}
+                          <div style={{display:"grid",gridTemplateColumns:"1.6fr 1fr",gap:10,marginBottom:14}}>
+                            <div>
+                              <label style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:6,display:"block"}}>Período</label>
+                              <div style={{display:"flex",gap:3,background:"rgba(255,255,255,.04)",borderRadius:9,padding:3,border:`1px solid ${T.borderMid}`}}>
+                                {[{v:"daily",l:"Diário"},{v:"weekly",l:"Semanal"},{v:"monthly",l:"Mensal"}].map(p=>(
+                                  <button key={p.v} onClick={()=>setNewBudget({...newBudget,period:p.v})} style={{flex:1,padding:"7px 10px",borderRadius:7,border:"none",cursor:"pointer",background:newBudget.period===p.v?"rgba(99,102,241,.15)":"transparent",color:newBudget.period===p.v?T.accent:T.sub,fontSize:11,fontFamily:T.font,fontWeight:newBudget.period===p.v?600:500,transition:"all .15s"}}>{p.l}</button>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <label style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:6,display:"block"}}>Moeda</label>
+                              <div style={{display:"flex",gap:3,background:"rgba(255,255,255,.04)",borderRadius:9,padding:3,border:`1px solid ${T.borderMid}`}}>
+                                {[{v:"BRL",l:"R$"},{v:"USD",l:"$"},{v:"EUR",l:"€"}].map(c=>(
+                                  <button key={c.v} onClick={()=>setNewBudget({...newBudget,currency:c.v})} style={{flex:1,padding:"7px 8px",borderRadius:7,border:"none",cursor:"pointer",background:newBudget.currency===c.v?"rgba(99,102,241,.15)":"transparent",color:newBudget.currency===c.v?T.accent:T.sub,fontSize:11,fontFamily:T.mono,fontWeight:newBudget.currency===c.v?600:500,transition:"all .15s"}}>{c.l}</button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Valor limite com sugestão */}
+                          <div style={{marginBottom:14}}>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                              <label style={{fontSize:11,color:T.txt,fontWeight:500}}>Valor do limite</label>
+                              {suggestion&&(
+                                <button onClick={()=>setNewBudget({...newBudget,limit:String(suggestion.val)})} style={{fontSize:10,color:T.accent,background:"rgba(99,102,241,.08)",border:"1px solid rgba(99,102,241,.2)",padding:"3px 9px",borderRadius:5,cursor:"pointer",fontFamily:T.font}}>💡 Usar {symb(newBudget.currency)} {suggestion.val.toLocaleString("pt-BR")}</button>
+                              )}
+                            </div>
+                            <div style={{position:"relative"}}>
+                              <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:13,color:T.sub,fontFamily:T.mono,pointerEvents:"none",fontWeight:500}}>{symb(newBudget.currency)}</span>
+                              <input type="number" value={newBudget.limit} onChange={e=>setNewBudget({...newBudget,limit:e.target.value})} placeholder="0,00" style={{width:"100%",background:"rgba(255,255,255,.04)",border:`1px solid ${newBudget.limit&&parseFloat(newBudget.limit)>0?T.accent+"44":T.borderMid}`,borderRadius:9,padding:"10px 12px 10px 38px",color:T.txt,fontSize:13,fontFamily:T.mono,fontWeight:500,boxSizing:"border-box",outline:"none",transition:"border-color .15s"}}/>
+                            </div>
+                            {suggestion&&<div style={{fontSize:10,color:T.mute,marginTop:5}}>{suggestion.label}</div>}
+                          </div>
+
+                          {/* Slider de alerta */}
+                          <div style={{marginBottom:8}}>
+                            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                              <label style={{fontSize:11,color:T.txt,fontWeight:500}}>Alertar quando atingir</label>
+                              <div style={{display:"flex",alignItems:"baseline",gap:3}}>
+                                <span style={{fontSize:18,color:T.warn,fontFamily:T.mono,fontWeight:600}}>{newBudget.alertPct}</span>
+                                <span style={{fontSize:11,color:T.warn,fontFamily:T.mono}}>%</span>
+                              </div>
+                            </div>
+                            <div style={{position:"relative",padding:"4px 0"}}>
+                              <div style={{height:6,background:"rgba(255,255,255,.06)",borderRadius:100,position:"relative",overflow:"hidden"}}>
+                                <div style={{position:"absolute",left:0,top:0,bottom:0,width:`${((newBudget.alertPct-50)/45)*100}%`,background:`linear-gradient(90deg,${T.ok} 0%,${T.warn} 60%,${T.err} 100%)`,borderRadius:100,transition:"width .2s"}}></div>
+                              </div>
+                              <input type="range" min="50" max="95" step="5" value={newBudget.alertPct} onChange={e=>setNewBudget({...newBudget,alertPct:parseInt(e.target.value)})} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",opacity:0,cursor:"pointer",margin:0}}/>
+                              <div style={{position:"absolute",top:"50%",left:`${((newBudget.alertPct-50)/45)*100}%`,transform:"translate(-50%,-50%)",width:18,height:18,borderRadius:"50%",background:"#fff",border:`3px solid ${T.warn}`,boxShadow:"0 2px 6px rgba(0,0,0,.3)",pointerEvents:"none",transition:"left .15s"}}></div>
+                            </div>
+                            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:T.mute,marginTop:8,fontFamily:T.mono}}>
+                              <span>50%</span><span>60%</span><span>70%</span><span>80%</span><span>90%</span><span>95%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ─── COLUNA DIREITA: PREVIEW + AÇÕES ─── */}
+                        <div style={{padding:"20px 22px",background:"rgba(255,255,255,.015)",display:"flex",flexDirection:"column"}}>
+                          <div style={{fontSize:9,color:T.mute,letterSpacing:".08em",textTransform:"uppercase",marginBottom:10,fontWeight:600}}>Preview da regra</div>
+
+                          {/* Card preview */}
+                          <div style={{background:"rgba(255,255,255,.03)",borderRadius:11,border:`1px solid ${T.border}`,padding:"14px 16px",marginBottom:14}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+                              <span style={{fontSize:13,fontWeight:600,color:newBudget.name?T.txt:T.mute}}>{previewName}</span>
+                              <span style={{fontSize:9,background:"rgba(34,197,94,.1)",color:T.ok,borderRadius:5,padding:"2px 6px",fontWeight:600}}>✓ Saudável</span>
+                            </div>
+                            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
+                              <span style={{fontSize:10,color:T.mute}}>{previewAcc}</span>
+                              <span style={{fontSize:9,background:"rgba(255,255,255,.06)",borderRadius:4,padding:"1px 6px",color:T.mute}}>{periodLabels[newBudget.period]}</span>
+                            </div>
+                            <div style={{marginBottom:8}}>
+                              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                                <span style={{fontSize:10,color:T.mute}}>Progresso {periodHints[newBudget.period]}</span>
+                                <span style={{fontSize:11,fontFamily:T.mono,color:T.ok,fontWeight:600}}>0%</span>
+                              </div>
+                              <div style={{background:"rgba(255,255,255,.07)",borderRadius:100,height:6,position:"relative",overflow:"hidden"}}>
+                                <div style={{background:T.ok,width:"0%",height:"100%",borderRadius:100}}></div>
+                                <div style={{position:"absolute",top:-1,bottom:-1,left:`${newBudget.alertPct}%`,width:2,background:T.warn,opacity:.9}}></div>
+                              </div>
+                              <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:9,color:T.mute,fontFamily:T.mono}}>
+                                <span>0</span>
+                                <span style={{color:T.warn}}>▲ {newBudget.alertPct}%</span>
+                                <span>{fmtPrev(newBudget.limit,newBudget.currency)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Resumo legível */}
+                          <div style={{background:"rgba(99,102,241,.05)",border:"1px solid rgba(99,102,241,.15)",borderRadius:9,padding:"10px 12px",marginBottom:14,fontSize:11,color:T.sub,lineHeight:1.6}}>
+                            <div style={{fontSize:9,color:T.accent,letterSpacing:".08em",textTransform:"uppercase",marginBottom:4,fontWeight:600}}>Resumo</div>
+                            Vou monitorar <span style={{color:T.txt,fontWeight:500}}>{previewAcc.toLowerCase()}</span> com limite de <span style={{color:T.accent,fontFamily:T.mono,fontWeight:500}}>{fmtPrev(newBudget.limit,newBudget.currency)}</span> {periodHints[newBudget.period]}, e te aviso quando atingir <span style={{color:T.warn,fontWeight:500}}>{newBudget.alertPct}%</span> do limite.
+                          </div>
+
+                          {/* Spacer empurra botões pra baixo */}
+                          <div style={{flex:1}}></div>
+
+                          {/* Botões */}
+                          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                            <button className="btn-p" onClick={saveBudgetRule} disabled={!valid} style={{padding:"11px 0",borderRadius:9,border:"none",background:valid?T.accent:"rgba(99,102,241,.3)",color:"#fff",cursor:valid?"pointer":"not-allowed",fontSize:13,fontWeight:600,fontFamily:T.font,opacity:valid?1:.6,transition:"all .15s"}}>{valid?"Criar regra":"Preencha os campos"}</button>
+                            <button onClick={()=>setShowBudgetForm(false)} style={{padding:"9px 0",borderRadius:9,border:`1px solid ${T.border}`,background:"transparent",color:T.sub,cursor:"pointer",fontSize:12,fontFamily:T.font}}>Cancelar</button>
+                          </div>
                         </div>
                       </div>
-                      <div><div style={{fontSize:9,color:T.mute,letterSpacing:".07em",textTransform:"uppercase",marginBottom:4}}>Período</div>
-                        <select value={newBudget.period} onChange={e=>setNewBudget({...newBudget,period:e.target.value})} style={{width:"100%",background:"rgba(255,255,255,.04)",border:`1px solid ${T.borderMid}`,borderRadius:8,padding:"9px 12px",color:T.txt,fontSize:12,fontFamily:T.font}}>
-                          <option value="monthly">Mensal</option><option value="weekly">Semanal</option><option value="daily">Diário</option>
-                        </select>
-                      </div>
                     </div>
-                    <div style={{marginBottom:14}}>
-                      <div style={{fontSize:9,color:T.mute,letterSpacing:".07em",textTransform:"uppercase",marginBottom:6}}>Alertar quando atingir: <span style={{color:T.warn,fontFamily:T.mono,fontWeight:600}}>{newBudget.alertPct}%</span></div>
-                      <input type="range" min="50" max="95" step="5" value={newBudget.alertPct} onChange={e=>setNewBudget({...newBudget,alertPct:parseInt(e.target.value)})} style={{width:"100%",accentColor:T.warn}}/>
-                      <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:T.mute,marginTop:3}}><span>50%</span><span>70%</span><span>80%</span><span>90%</span><span>95%</span></div>
-                    </div>
-                    <div style={{display:"flex",gap:8}}>
-                      <button onClick={()=>setShowBudgetForm(false)} style={{flex:1,padding:"9px 0",borderRadius:9,border:`1px solid ${T.border}`,background:"transparent",color:T.sub,cursor:"pointer",fontSize:12,fontFamily:T.font}}>Cancelar</button>
-                      <button className="btn-p" onClick={saveBudgetRule} style={{flex:2,padding:"10px 0",borderRadius:9,border:"none",background:T.accent,color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:T.font}}>Salvar Regra</button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
+
 
                 {/* ── EMPTY STATES ── */}
                 {budgetLoading&&<div style={{textAlign:"center",padding:"40px 0",color:T.mute,fontSize:12}}>Carregando regras...</div>}

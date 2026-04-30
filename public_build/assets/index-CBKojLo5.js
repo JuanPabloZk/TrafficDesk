@@ -52589,62 +52589,191 @@ function Dashboard() {
                 /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-p", onClick: () => setShowBudgetForm(!showBudgetForm), style: { padding: "9px 18px", borderRadius: 9, border: "none", background: T.accent, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: T.font, whiteSpace: "nowrap" }, children: "+ Nova Regra" })
               ] })
             ] }),
-            showBudgetForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.borderMid}`, padding: "20px 22px", marginBottom: 16 }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 13, fontWeight: 600, color: T.txt, marginBottom: 14 }, children: "Nova Regra de Verba" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 12 }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 4 }, children: "Nome da Regra" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: newBudget.name, onChange: (e3) => setNewBudget({ ...newBudget, name: e3.target.value }), placeholder: "Ex: Limite mensal — Conta Alpha", style: { width: "100%", background: "rgba(255,255,255,.04)", border: `1px solid ${T.borderMid}`, borderRadius: 8, padding: "9px 12px", color: T.txt, fontSize: 12, fontFamily: T.font, boxSizing: "border-box" } })
+            showBudgetForm && (() => {
+              var _a2;
+              const symb2 = (c2) => c2 === "EUR" ? "€" : c2 === "USD" ? "$" : "R$";
+              const fmtPrev = (v2, c2) => v2 ? `${symb2(c2)} ${parseFloat(v2).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : `${symb2(c2)} 0,00`;
+              const periodLabels = { monthly: "Mensal", weekly: "Semanal", daily: "Diário" };
+              const periodHints = { monthly: "do mês corrente", weekly: "da semana corrente", daily: "do dia" };
+              const suggestion = (() => {
+                if (!liveMetrics) return null;
+                if (newBudget.accountId) {
+                  const m2 = liveMetrics.find((d2) => d2.accountId === newBudget.accountId);
+                  if (m2) {
+                    const v2 = parseFloat(m2.investido);
+                    return v2 > 0 ? { val: Math.ceil(v2 * 1.2), label: "Sugestão: 20% acima do gasto atual" } : null;
+                  }
+                } else {
+                  const total2 = liveMetrics.reduce((s2, m2) => s2 + parseFloat(m2.investido || 0), 0);
+                  if (total2 > 0) return { val: Math.ceil(total2 * 1.2), label: "Sugestão: 20% acima do gasto total" };
+                }
+                return null;
+              })();
+              const previewName = newBudget.name || "Nome da regra";
+              const previewAcc = newBudget.accountId ? ((_a2 = metaAccounts.find((a2) => a2.id === newBudget.accountId)) == null ? void 0 : _a2.name) || "Conta" : "Todas as contas";
+              const valid = newBudget.name && newBudget.limit && parseFloat(newBudget.limit) > 0;
+              return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "card", style: { background: T.card, borderRadius: 14, border: `1px solid ${T.borderMid}`, padding: 0, marginBottom: 16, overflow: "hidden" }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: `1px solid ${T.border}` }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 32, height: 32, borderRadius: 8, background: "rgba(99,102,241,.12)", border: "1px solid rgba(99,102,241,.18)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }, children: "💰" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 13, fontWeight: 600, color: T.txt }, children: "Nova Regra de Verba" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: T.mute, marginTop: 2 }, children: "Configure limites e alertas para suas contas" })
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowBudgetForm(false), style: { width: 30, height: 30, borderRadius: 7, border: `1px solid ${T.border}`, background: "transparent", color: T.sub, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }, children: "✕" })
                 ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 4 }, children: "Conta (opcional)" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { value: newBudget.accountId, onChange: (e3) => setNewBudget({ ...newBudget, accountId: e3.target.value }), style: { width: "100%", background: "rgba(255,255,255,.04)", border: `1px solid ${T.borderMid}`, borderRadius: 8, padding: "9px 12px", color: T.txt, fontSize: 12, fontFamily: T.font }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "Todas as contas" }),
-                    metaAccounts.map((a2) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: a2.id, children: a2.name }, a2.id))
-                  ] })
-                ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 4 }, children: "Valor limite" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 6 }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { value: newBudget.currency, onChange: (e3) => setNewBudget({ ...newBudget, currency: e3.target.value }), style: { background: "rgba(255,255,255,.04)", border: `1px solid ${T.borderMid}`, borderRadius: 8, padding: "9px 10px", color: T.txt, fontSize: 12, fontFamily: T.font }, children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "BRL", children: "R$" }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "EUR", children: "€" }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "USD", children: "$" })
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr" }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "20px 22px", borderRight: isMobile ? "none" : `1px solid ${T.border}` }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 18 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8, fontWeight: 600 }, children: "Comece rápido" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }, children: [
+                        { l: "Limite mensal", p: "monthly", a: 80, emoji: "📅" },
+                        { l: "Limite semanal", p: "weekly", a: 75, emoji: "📊" },
+                        { l: "Verba diária", p: "daily", a: 70, emoji: "⚡" }
+                      ].map((t2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => setNewBudget({ ...newBudget, period: t2.p, alertPct: t2.a, name: newBudget.name || t2.l }), style: { padding: "10px 8px", borderRadius: 9, border: `1px solid ${newBudget.period === t2.p ? T.accent + "66" : T.border}`, background: newBudget.period === t2.p ? "rgba(99,102,241,.08)" : "transparent", color: newBudget.period === t2.p ? T.accent : T.sub, cursor: "pointer", fontSize: 11, fontFamily: T.font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, transition: "all .15s" }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14 }, children: t2.emoji }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontWeight: newBudget.period === t2.p ? 600 : 500 }, children: t2.l })
+                      ] }, i)) })
                     ] }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "number", value: newBudget.limit, onChange: (e3) => setNewBudget({ ...newBudget, limit: e3.target.value }), placeholder: "Ex: 300", style: { flex: 1, background: "rgba(255,255,255,.04)", border: `1px solid ${T.borderMid}`, borderRadius: 8, padding: "9px 12px", color: T.txt, fontSize: 12, fontFamily: T.font, boxSizing: "border-box" } })
-                  ] })
-                ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 4 }, children: "Período" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("select", { value: newBudget.period, onChange: (e3) => setNewBudget({ ...newBudget, period: e3.target.value }), style: { width: "100%", background: "rgba(255,255,255,.04)", border: `1px solid ${T.borderMid}`, borderRadius: 8, padding: "9px 12px", color: T.txt, fontSize: 12, fontFamily: T.font }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "monthly", children: "Mensal" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "weekly", children: "Semanal" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "daily", children: "Diário" })
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 14 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { fontSize: 11, color: T.txt, fontWeight: 500 }, children: "Nome da regra" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 10, color: T.mute }, children: [
+                          newBudget.name.length,
+                          "/40"
+                        ] })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("input", { value: newBudget.name, maxLength: 40, onChange: (e3) => setNewBudget({ ...newBudget, name: e3.target.value }), placeholder: "Ex: Limite mensal — Cliente A", style: { width: "100%", background: "rgba(255,255,255,.04)", border: `1px solid ${newBudget.name ? T.accent + "44" : T.borderMid}`, borderRadius: 9, padding: "10px 12px", color: T.txt, fontSize: 13, fontFamily: T.font, boxSizing: "border-box", outline: "none", transition: "border-color .15s" } })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 14 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { fontSize: 11, color: T.txt, fontWeight: 500, marginBottom: 6, display: "block" }, children: "Aplicar para" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 5, maxHeight: 140, overflowY: "auto", background: "rgba(255,255,255,.02)", borderRadius: 9, padding: 5, border: `1px solid ${T.borderMid}` }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => setNewBudget({ ...newBudget, accountId: "" }), style: { display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 7, border: "none", background: newBudget.accountId === "" ? "rgba(99,102,241,.1)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: T.font, transition: "background .15s" }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 22, height: 22, borderRadius: 6, background: newBudget.accountId === "" ? "rgba(99,102,241,.2)" : "rgba(255,255,255,.05)", border: `1px solid ${newBudget.accountId === "" ? T.accent + "55" : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: newBudget.accountId === "" ? T.accent : T.sub, fontWeight: 600 }, children: "∗" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 500, color: newBudget.accountId === "" ? T.txt : T.sub }, children: "Todas as contas" }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, marginTop: 1 }, children: "Soma o gasto de todas as contas conectadas" })
+                          ] }),
+                          newBudget.accountId === "" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13, color: T.accent }, children: "✓" })
+                        ] }),
+                        metaAccounts.map((a2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => setNewBudget({ ...newBudget, accountId: a2.id }), style: { display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 7, border: "none", background: newBudget.accountId === a2.id ? "rgba(99,102,241,.1)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: T.font, transition: "background .15s" }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 22, height: 22, borderRadius: 6, background: newBudget.accountId === a2.id ? "rgba(99,102,241,.2)" : "rgba(255,255,255,.05)", border: `1px solid ${newBudget.accountId === a2.id ? T.accent + "55" : T.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: newBudget.accountId === a2.id ? T.accent : T.sub, fontWeight: 600 }, children: a2.name.split(" ").map((w2) => w2[0]).join("").slice(0, 2).toUpperCase() }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 12, fontWeight: 500, color: newBudget.accountId === a2.id ? T.txt : T.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }, children: a2.name }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, marginTop: 1, fontFamily: T.mono }, children: a2.id })
+                          ] }),
+                          newBudget.accountId === a2.id && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13, color: T.accent }, children: "✓" })
+                        ] }, a2.id))
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 10, marginBottom: 14 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { fontSize: 11, color: T.txt, fontWeight: 500, marginBottom: 6, display: "block" }, children: "Período" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 3, background: "rgba(255,255,255,.04)", borderRadius: 9, padding: 3, border: `1px solid ${T.borderMid}` }, children: [{ v: "daily", l: "Diário" }, { v: "weekly", l: "Semanal" }, { v: "monthly", l: "Mensal" }].map((p2) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setNewBudget({ ...newBudget, period: p2.v }), style: { flex: 1, padding: "7px 10px", borderRadius: 7, border: "none", cursor: "pointer", background: newBudget.period === p2.v ? "rgba(99,102,241,.15)" : "transparent", color: newBudget.period === p2.v ? T.accent : T.sub, fontSize: 11, fontFamily: T.font, fontWeight: newBudget.period === p2.v ? 600 : 500, transition: "all .15s" }, children: p2.l }, p2.v)) })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { fontSize: 11, color: T.txt, fontWeight: 500, marginBottom: 6, display: "block" }, children: "Moeda" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 3, background: "rgba(255,255,255,.04)", borderRadius: 9, padding: 3, border: `1px solid ${T.borderMid}` }, children: [{ v: "BRL", l: "R$" }, { v: "USD", l: "$" }, { v: "EUR", l: "€" }].map((c2) => /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setNewBudget({ ...newBudget, currency: c2.v }), style: { flex: 1, padding: "7px 8px", borderRadius: 7, border: "none", cursor: "pointer", background: newBudget.currency === c2.v ? "rgba(99,102,241,.15)" : "transparent", color: newBudget.currency === c2.v ? T.accent : T.sub, fontSize: 11, fontFamily: T.mono, fontWeight: newBudget.currency === c2.v ? 600 : 500, transition: "all .15s" }, children: c2.l }, c2.v)) })
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 14 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { fontSize: 11, color: T.txt, fontWeight: 500 }, children: "Valor do limite" }),
+                        suggestion && /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { onClick: () => setNewBudget({ ...newBudget, limit: String(suggestion.val) }), style: { fontSize: 10, color: T.accent, background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.2)", padding: "3px 9px", borderRadius: 5, cursor: "pointer", fontFamily: T.font }, children: [
+                          "💡 Usar ",
+                          symb2(newBudget.currency),
+                          " ",
+                          suggestion.val.toLocaleString("pt-BR")
+                        ] })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { position: "relative" }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: T.sub, fontFamily: T.mono, pointerEvents: "none", fontWeight: 500 }, children: symb2(newBudget.currency) }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "number", value: newBudget.limit, onChange: (e3) => setNewBudget({ ...newBudget, limit: e3.target.value }), placeholder: "0,00", style: { width: "100%", background: "rgba(255,255,255,.04)", border: `1px solid ${newBudget.limit && parseFloat(newBudget.limit) > 0 ? T.accent + "44" : T.borderMid}`, borderRadius: 9, padding: "10px 12px 10px 38px", color: T.txt, fontSize: 13, fontFamily: T.mono, fontWeight: 500, boxSizing: "border-box", outline: "none", transition: "border-color .15s" } })
+                      ] }),
+                      suggestion && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 10, color: T.mute, marginTop: 5 }, children: suggestion.label })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 8 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { fontSize: 11, color: T.txt, fontWeight: 500 }, children: "Alertar quando atingir" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "baseline", gap: 3 }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 18, color: T.warn, fontFamily: T.mono, fontWeight: 600 }, children: newBudget.alertPct }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, color: T.warn, fontFamily: T.mono }, children: "%" })
+                        ] })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { position: "relative", padding: "4px 0" }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { height: 6, background: "rgba(255,255,255,.06)", borderRadius: 100, position: "relative", overflow: "hidden" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", left: 0, top: 0, bottom: 0, width: `${(newBudget.alertPct - 50) / 45 * 100}%`, background: `linear-gradient(90deg,${T.ok} 0%,${T.warn} 60%,${T.err} 100%)`, borderRadius: 100, transition: "width .2s" } }) }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "range", min: "50", max: "95", step: "5", value: newBudget.alertPct, onChange: (e3) => setNewBudget({ ...newBudget, alertPct: parseInt(e3.target.value) }), style: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer", margin: 0 } }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: "50%", left: `${(newBudget.alertPct - 50) / 45 * 100}%`, transform: "translate(-50%,-50%)", width: 18, height: 18, borderRadius: "50%", background: "#fff", border: `3px solid ${T.warn}`, boxShadow: "0 2px 6px rgba(0,0,0,.3)", pointerEvents: "none", transition: "left .15s" } })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 10, color: T.mute, marginTop: 8, fontFamily: T.mono }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "50%" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "60%" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "70%" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "80%" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "90%" }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "95%" })
+                      ] })
+                    ] })
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "20px 22px", background: "rgba(255,255,255,.015)", display: "flex", flexDirection: "column" }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 10, fontWeight: 600 }, children: "Preview da regra" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(255,255,255,.03)", borderRadius: 11, border: `1px solid ${T.border}`, padding: "14px 16px", marginBottom: 14 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13, fontWeight: 600, color: newBudget.name ? T.txt : T.mute }, children: previewName }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 9, background: "rgba(34,197,94,.1)", color: T.ok, borderRadius: 5, padding: "2px 6px", fontWeight: 600 }, children: "✓ Saudável" })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10, color: T.mute }, children: previewAcc }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 9, background: "rgba(255,255,255,.06)", borderRadius: 4, padding: "1px 6px", color: T.mute }, children: periodLabels[newBudget.period] })
+                      ] }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 8 }, children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 4 }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 10, color: T.mute }, children: [
+                            "Progresso ",
+                            periodHints[newBudget.period]
+                          ] }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11, fontFamily: T.mono, color: T.ok, fontWeight: 600 }, children: "0%" })
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(255,255,255,.07)", borderRadius: 100, height: 6, position: "relative", overflow: "hidden" }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { background: T.ok, width: "0%", height: "100%", borderRadius: 100 } }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "absolute", top: -1, bottom: -1, left: `${newBudget.alertPct}%`, width: 2, background: T.warn, opacity: 0.9 } })
+                        ] }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, color: T.mute, fontFamily: T.mono }, children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "0" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: T.warn }, children: [
+                            "▲ ",
+                            newBudget.alertPct,
+                            "%"
+                          ] }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: fmtPrev(newBudget.limit, newBudget.currency) })
+                        ] })
+                      ] })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "rgba(99,102,241,.05)", border: "1px solid rgba(99,102,241,.15)", borderRadius: 9, padding: "10px 12px", marginBottom: 14, fontSize: 11, color: T.sub, lineHeight: 1.6 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 9, color: T.accent, letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 4, fontWeight: 600 }, children: "Resumo" }),
+                      "Vou monitorar ",
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.txt, fontWeight: 500 }, children: previewAcc.toLowerCase() }),
+                      " com limite de ",
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: T.accent, fontFamily: T.mono, fontWeight: 500 }, children: fmtPrev(newBudget.limit, newBudget.currency) }),
+                      " ",
+                      periodHints[newBudget.period],
+                      ", e te aviso quando atingir ",
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: T.warn, fontWeight: 500 }, children: [
+                        newBudget.alertPct,
+                        "%"
+                      ] }),
+                      " do limite."
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1 } }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-p", onClick: saveBudgetRule, disabled: !valid, style: { padding: "11px 0", borderRadius: 9, border: "none", background: valid ? T.accent : "rgba(99,102,241,.3)", color: "#fff", cursor: valid ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 600, fontFamily: T.font, opacity: valid ? 1 : 0.6, transition: "all .15s" }, children: valid ? "Criar regra" : "Preencha os campos" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowBudgetForm(false), style: { padding: "9px 0", borderRadius: 9, border: `1px solid ${T.border}`, background: "transparent", color: T.sub, cursor: "pointer", fontSize: 12, fontFamily: T.font }, children: "Cancelar" })
+                    ] })
                   ] })
                 ] })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 14 }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 9, color: T.mute, letterSpacing: ".07em", textTransform: "uppercase", marginBottom: 6 }, children: [
-                  "Alertar quando atingir: ",
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: T.warn, fontFamily: T.mono, fontWeight: 600 }, children: [
-                    newBudget.alertPct,
-                    "%"
-                  ] })
-                ] }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "range", min: "50", max: "95", step: "5", value: newBudget.alertPct, onChange: (e3) => setNewBudget({ ...newBudget, alertPct: parseInt(e3.target.value) }), style: { width: "100%", accentColor: T.warn } }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 10, color: T.mute, marginTop: 3 }, children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "50%" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "70%" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "80%" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "90%" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "95%" })
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => setShowBudgetForm(false), style: { flex: 1, padding: "9px 0", borderRadius: 9, border: `1px solid ${T.border}`, background: "transparent", color: T.sub, cursor: "pointer", fontSize: 12, fontFamily: T.font }, children: "Cancelar" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "btn-p", onClick: saveBudgetRule, style: { flex: 2, padding: "10px 0", borderRadius: 9, border: "none", background: T.accent, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: T.font }, children: "Salvar Regra" })
-              ] })
-            ] }),
+              ] });
+            })(),
             budgetLoading && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { textAlign: "center", padding: "40px 0", color: T.mute, fontSize: 12 }, children: "Carregando regras..." }),
             !budgetLoading && budgetRules.length === 0 && !showBudgetForm && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 20px", textAlign: "center", background: T.card, borderRadius: 14, border: `1px dashed ${T.borderMid}` }, children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { width: 56, height: 56, borderRadius: 16, background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, marginBottom: 14 }, children: "💰" }),
